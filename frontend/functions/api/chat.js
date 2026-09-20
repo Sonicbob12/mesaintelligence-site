@@ -35,23 +35,25 @@ export async function onRequestPost({ request, env }) {
   }
   const messages = [...history, { role: "user", content: text }];
 
-  const upstream = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: env.ANTHROPIC_MODEL || "claude-sonnet-4-5",
-      max_tokens: 300,
-      system: SYSTEM_PROMPTS[vertical],
-      messages,
-      stream: true,
-    }),
-  });
+  const candidates = [env.ANTHROPIC_MODEL, "claude-sonnet-4-5", "claude-sonnet-4-20250514", "claude-3-7-sonnet-latest"].filter(Boolean);
+  let upstream = null;
+  for (const model of candidates) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({ model, max_tokens: 300, system: SYSTEM_PROMPTS[vertical], messages, stream: true }),
+    });
+    if (res.ok && res.body) { upstream = res; break; }
+    const errText = await res.text().catch(() => "");
+    console.error(`Anthropic error model=${model} status=${res.status} body=${errText.slice(0, 300)}`);
+    if (res.status !== 404 && !/not_found|model/i.test(errText)) break; // only retry on unknown-model errors
+  }
 
-  if (!upstream.ok || !upstream.body) {
+  if (!upstream) {
     const fallback = "Our demo agent is catching its breath — please try again in a moment.";
     return new Response(sse({ delta: fallback }) + "data: [DONE]\n\n", { headers: sseHeaders() });
   }
