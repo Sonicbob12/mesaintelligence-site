@@ -2,6 +2,7 @@
 // Env vars (set in Cloudflare Pages → Settings → Variables and Secrets):
 //   ANTHROPIC_API_KEY  (secret)
 //   ANTHROPIC_MODEL    (optional, defaults below)
+//   ANTHROPIC_WORKSPACE_ID (required only for organization-scoped keys)
 
 const SYSTEM_PROMPTS = {
   hvac: "You are the AI dispatch assistant for Desert Peak HVAC, a fictional family-run heating and cooling company used as a demo. Answer as their front desk would: triage emergencies, quote service windows (Mon-Sat 7am-7pm, emergency fee $89 after hours), and offer maintenance plans ($18/mo). Be warm, concise (2-4 sentences), and always try to book the job. End with a question that moves toward scheduling. If asked, say plainly that this is a demo agent built by Mesa Intelligence.",
@@ -44,6 +45,7 @@ export async function onRequestPost({ request, env }) {
         "content-type": "application/json",
         "x-api-key": env.ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
+        ...(env.ANTHROPIC_WORKSPACE_ID ? { "anthropic-workspace-id": env.ANTHROPIC_WORKSPACE_ID } : {}),
       },
       body: JSON.stringify({ model, max_tokens: 300, system: SYSTEM_PROMPTS[vertical], messages, stream: true }),
     });
