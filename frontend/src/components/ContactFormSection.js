@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import ChapterBadge from "@/components/ChapterBadge";
@@ -15,6 +15,16 @@ export default function ContactFormSection() {
   const [sending, setSending] = useState(false);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // The demo hub fires this with a transcript ("Send this chat with my audit request").
+  useEffect(() => {
+    const onPrefill = (e) => {
+      const { message, industry } = e.detail || {};
+      setForm((f) => ({ ...f, message: message ?? f.message, industry: industry ?? f.industry }));
+    };
+    window.addEventListener("mesa:prefill", onPrefill);
+    return () => window.removeEventListener("mesa:prefill", onPrefill);
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();

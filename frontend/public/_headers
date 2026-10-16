@@ -1,2 +1,10 @@
 /api/*
   Cache-Control: no-store
+
+/embed
+  Content-Security-Policy: frame-ancestors *
+  X-Robots-Tag: noindex
+
+/widget.js
+  Cache-Control: public, max-age=3600
+  Access-Control-Allow-Origin: *

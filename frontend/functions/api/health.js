@@ -1,0 +1,27 @@
+// GET /api/health — which pieces are configured. No secrets are revealed.
+
+import { hasDB } from "../_lib/db.js";
+import { json } from "../_lib/http.js";
+
+export async function onRequestGet({ env }) {
+  let db = "not bound";
+  if (hasDB(env)) {
+    try {
+      const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM tenants").first();
+      db = `ok (${r?.n ?? 0} tenants)`;
+    } catch (e) {
+      db = `bound but schema missing: ${String(e?.message || e).slice(0, 80)}`;
+    }
+  }
+  return json({
+    ok: true,
+    anthropic: Boolean(env.ANTHROPIC_API_KEY),
+    model: env.ANTHROPIC_MODEL || "default",
+    resend: Boolean(env.RESEND_API_KEY),
+    lead_to: env.LEAD_TO || null,
+    twilio: Boolean(env.TWILIO_AUTH_TOKEN),
+    admin: Boolean(env.ADMIN_TOKEN),
+    db,
+    storage: hasDB(env) ? "d1" : "memory (sessions reset; bind D1 as DB to persist)",
+  });
+}
