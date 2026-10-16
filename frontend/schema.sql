@@ -1,7 +1,3 @@
--- Mesa Intelligence agent engine — D1 schema + demo seed.
--- Apply:  npx wrangler d1 execute mesa-agents --remote --file=schema.sql
--- Safe to re-run: tables use IF NOT EXISTS and seeds use INSERT OR REPLACE.
-
 CREATE TABLE IF NOT EXISTS tenants (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -30,18 +26,7 @@ CREATE TABLE IF NOT EXISTS knowledge (
 );
 CREATE INDEX IF NOT EXISTS knowledge_tenant ON knowledge (tenant_id);
 
--- Full-text index kept in sync by triggers (external-content FTS5 table).
 CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(title, content, content='knowledge', content_rowid='id', tokenize='porter unicode61');
-CREATE TRIGGER IF NOT EXISTS knowledge_ai AFTER INSERT ON knowledge BEGIN
-  INSERT INTO knowledge_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-END;
-CREATE TRIGGER IF NOT EXISTS knowledge_ad AFTER DELETE ON knowledge BEGIN
-  INSERT INTO knowledge_fts(knowledge_fts, rowid, title, content) VALUES ('delete', old.id, old.title, old.content);
-END;
-CREATE TRIGGER IF NOT EXISTS knowledge_au AFTER UPDATE ON knowledge BEGIN
-  INSERT INTO knowledge_fts(knowledge_fts, rowid, title, content) VALUES ('delete', old.id, old.title, old.content);
-  INSERT INTO knowledge_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-END;
 
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
@@ -93,7 +78,6 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   count INTEGER NOT NULL DEFAULT 0
 );
 
--- ---------- demo seed ----------
 INSERT OR REPLACE INTO tenants (id, name, vertical, timezone, greeting, presets_json, persona, hours_json, slot_minutes, services_json, escalation, notify_email, sms_number, demo, active)
 VALUES ('desert-peak-hvac', 'Desert Peak HVAC', 'hvac', 'America/Denver', 'Desert Peak HVAC, this is Mesa — how can I help you today?', '["My AC died and it''s 110° outside","Do you offer maintenance plans?","Book me a tune-up next week"]', 'You are the AI dispatch assistant for Desert Peak HVAC, a family-run heating and cooling company in Las Cruces, NM. Act like their best front-desk dispatcher: warm, quick, and always moving toward a booked job. Triage first: no cooling in extreme heat, gas smell, or water leaking near electrical is an EMERGENCY — offer the next emergency slot and quote the after-hours fee. Keep replies to 2–4 sentences. Never invent prices or policies; use the knowledge provided. If something is outside what you know, say so and offer a callback.', '{"mon":["07:00","19:00"],"tue":["07:00","19:00"],"wed":["07:00","19:00"],"thu":["07:00","19:00"],"fri":["07:00","19:00"],"sat":["07:00","19:00"],"sun":null}', 120, '[{"name":"Diagnostic visit","minutes":120,"price":89},{"name":"AC tune-up","minutes":90,"price":129},{"name":"Furnace tune-up","minutes":90,"price":129},{"name":"Emergency service","minutes":120,"price":89,"note":"after-hours fee, plus repair"},{"name":"Maintenance plan enrollment","minutes":30,"price":18,"note":"per month"}]', 'Escalate to a human for: gas smell (tell caller to leave the house and call the gas company first), commercial jobs, warranty disputes, anything about pricing a full system replacement.', NULL, NULL, 1, 1);
 INSERT OR REPLACE INTO tenants (id, name, vertical, timezone, greeting, presets_json, persona, hours_json, slot_minutes, services_json, escalation, notify_email, sms_number, demo, active)
@@ -124,3 +108,5 @@ INSERT INTO knowledge (tenant_id, title, content, created_at) VALUES ('mesa-gran
 INSERT INTO knowledge (tenant_id, title, content, created_at) VALUES ('mesa-grant-legal', 'Hours and location', 'Office at 300 N Downtown Mall, Suite 210, Las Cruces, NM. Monday to Thursday 9:00 AM to 5:00 PM, Friday 9:00 AM to 4:00 PM. Closed weekends. Consultations are scheduled in 30-minute blocks. Parking is in the city garage on Water Street, validated for clients.', unixepoch());
 INSERT INTO knowledge (tenant_id, title, content, created_at) VALUES ('mesa-grant-legal', 'Intake rules for the assistant', 'Collect the caller''s name, phone, business name, and a one-sentence description of the matter. Do not collect Social Security numbers, financial account numbers, or details of any criminal matter in chat. If the caller has a court date or deadline within 7 days, flag it as urgent and request a same-day attorney callback. The assistant never gives legal advice or predicts outcomes; it can describe what the firm does and how engagement works.', unixepoch());
 INSERT INTO knowledge (tenant_id, title, content, created_at) VALUES ('mesa-grant-legal', 'Lease disputes — what to bring', 'For commercial lease disputes, the attorney will want a copy of the signed lease, any amendments, written notices exchanged with the landlord or tenant, and a timeline of events. New Mexico generally requires written notice before most lease remedies; the consultation will cover next steps. Clients should not sign anything from the other party before the consultation.', unixepoch());
+
+INSERT INTO knowledge_fts(knowledge_fts) VALUES('rebuild');

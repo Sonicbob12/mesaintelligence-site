@@ -5,11 +5,7 @@ import { DEMO_KNOWLEDGE } from "../functions/_lib/demo_knowledge.js";
 
 const q = (v) => v == null ? "NULL" : typeof v === "number" ? String(v) : `'${String(v).replace(/'/g, "''")}'`;
 
-const ddl = `-- Mesa Intelligence agent engine — D1 schema + demo seed.
--- Apply:  npx wrangler d1 execute mesa-agents --remote --file=schema.sql
--- Safe to re-run: tables use IF NOT EXISTS and seeds use INSERT OR REPLACE.
-
-CREATE TABLE IF NOT EXISTS tenants (
+const ddl = `CREATE TABLE IF NOT EXISTS tenants (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   vertical TEXT,
@@ -37,18 +33,9 @@ CREATE TABLE IF NOT EXISTS knowledge (
 );
 CREATE INDEX IF NOT EXISTS knowledge_tenant ON knowledge (tenant_id);
 
--- Full-text index kept in sync by triggers (external-content FTS5 table).
+-- Full-text index over knowledge (external-content FTS5). The app keeps it in sync;
+-- after bulk SQL changes run:  INSERT INTO knowledge_fts(knowledge_fts) VALUES('rebuild');
 CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(title, content, content='knowledge', content_rowid='id', tokenize='porter unicode61');
-CREATE TRIGGER IF NOT EXISTS knowledge_ai AFTER INSERT ON knowledge BEGIN
-  INSERT INTO knowledge_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-END;
-CREATE TRIGGER IF NOT EXISTS knowledge_ad AFTER DELETE ON knowledge BEGIN
-  INSERT INTO knowledge_fts(knowledge_fts, rowid, title, content) VALUES ('delete', old.id, old.title, old.content);
-END;
-CREATE TRIGGER IF NOT EXISTS knowledge_au AFTER UPDATE ON knowledge BEGIN
-  INSERT INTO knowledge_fts(knowledge_fts, rowid, title, content) VALUES ('delete', old.id, old.title, old.content);
-  INSERT INTO knowledge_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-END;
 
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
@@ -112,4 +99,7 @@ out += `\nDELETE FROM knowledge WHERE tenant_id IN (${Object.keys(DEMO_KNOWLEDGE
 for (const [tid, docs] of Object.entries(DEMO_KNOWLEDGE)) {
   for (const d of docs) out += `INSERT INTO knowledge (tenant_id, title, content, created_at) VALUES (${q(tid)}, ${q(d.title)}, ${q(d.content)}, unixepoch());\n`;
 }
+out += `\nINSERT INTO knowledge_fts(knowledge_fts) VALUES('rebuild');\n`;
+// No comment lines: the D1 dashboard console's statement splitter is picky; explanations live in docs/agent-engine.md.
+out = out.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n').replace(/\n{3,}/g, '\n\n');
 process.stdout.write(out);

@@ -8,7 +8,7 @@ Runs entirely on Cloudflare Pages Functions + D1. Code lives in `frontend/functi
 1. **Create the database.** Cloudflare dashboard → *Storage & Databases → D1 → Create* → name `mesa-agents`.
 2. **Load the schema + demo data.** Open the new database → *Console* tab → paste the contents of `frontend/schema.sql` → Execute.
    (Or from a terminal: `npx wrangler login` then `npx wrangler d1 execute mesa-agents --remote --file=frontend/schema.sql`.)
-   Safe to re-run; it re-seeds the four demo businesses.
+   Safe to re-run; it re-seeds the four demo businesses. (The file has no comments or triggers on purpose — the dashboard console's statement splitter can't handle them.)
 3. **Bind it to the site.** *Workers & Pages → mesaintelligence-site → Settings → Bindings → Add → D1 database*:
    variable name **`DB`**, database `mesa-agents`. Add it for **Production** and **Preview**.
 4. **Add an admin token.** Same Settings page → *Variables and Secrets → Add* → `ADMIN_TOKEN` (secret), any long random string
@@ -29,7 +29,7 @@ Until step 3 is done the site still works: sessions are held in memory (reset of
 
 ## How it works
 - **Tenant** = one business (`tenants` table, or the built-in demo set in `functions/_lib/tenants.js`): persona, hours, services, escalation rules, where to send notifications.
-- **Knowledge** = short single-topic docs per tenant (`knowledge` table). Each message runs a full-text search (FTS5/BM25) and the top 4 docs are placed in the model's context. Nothing is "trained"; it's retrieval, which is what you want — change a price, and the agent knows immediately.
+- **Knowledge** = short single-topic docs per tenant (`knowledge` table). Each message runs a full-text search (FTS5/BM25) and the top 4 docs are placed in the model's context. The admin API keeps the search index in sync; if you edit `knowledge` rows directly in the D1 console, run `INSERT INTO knowledge_fts(knowledge_fts) VALUES('rebuild');` afterwards (or `PATCH /api/admin/knowledge`). Nothing is "trained"; it's retrieval, which is what you want — change a price, and the agent knows immediately.
 - **Tools** the agent can call: `check_availability`, `book_appointment` (writes `bookings`, refuses clashes and closed hours), `escalate_to_human` (writes `handoffs`, emails the client if `notify_email` is set), `capture_lead`.
 - **Sessions** persist in `conversations`; the last 24 messages are kept in context.
 - **Channels:** web (`/api/chat`, SSE), embed (`/embed?tenant=…` framed by `/widget.js`), SMS (`/api/sms`, Twilio).
