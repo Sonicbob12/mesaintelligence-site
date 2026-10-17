@@ -1,12 +1,12 @@
 // Local Discovery audit: score a business's Google listing + website against nearby competitors,
 // then (for the full report) have Claude turn the findings into a prioritized fix-it plan.
 
-import { placeDetails, nearbyCompetitors } from "./places.js";
+import { placeDetails, nearbyCompetitors, competitorCategory } from "./places.js";
 import { checkWebsite } from "./website.js";
 import { runModelCollect } from "./anthropic.js";
 import { hasDB, id, now, safeJSON } from "./db.js";
 
-const GENERIC_TYPES = new Set(["establishment", "point_of_interest", "store", "service", "business", "premise", "general_contractor"]);
+const GENERIC_TYPES = new Set(["establishment", "point_of_interest", "store", "service", "business", "premise"]);
 const DAY = 86400000;
 
 const median = (xs) => {
@@ -30,7 +30,7 @@ function listingChecks(p, comps) {
 
   add("phone", "Phone number listed", Boolean(p.phone), p.phone ? 8 : 0, 8, p.phone || "No phone number", "Add a local phone number to the listing.");
 
-  add("website_link", "Website linked", Boolean(p.website), p.website ? 10 : 0, 10, p.website ? p.website.replace(/^https?:\/\//, "").replace(/\/$/, "") : "No website on the listing",
+  add("website_link", "Website linked", Boolean(p.website), p.website ? 10 : 0, 10, p.website ? p.website.replace(/^https?:\/\//, "").replace(/[?#].*$/, "").replace(/\/$/, "") : "No website on the listing",
     "Link a website (even a one-page site) — it's a ranking signal and where people go to decide.");
 
   const r = p.rating;
@@ -54,17 +54,22 @@ function listingChecks(p, comps) {
   add("review_volume", "Review count vs. competitors", vOk, vPts, 15, vDetail,
     "Set up an automatic review request after every job — review count is one of the strongest local ranking factors.");
 
-  const newest = Math.max(0, ...p.reviews.map((x) => x.at || 0));
-  const age = newest ? (Date.now() - newest) / DAY : Infinity;
-  const recPts = age <= 30 ? 10 : age <= 90 ? 6 : age <= 365 ? 2 : 0;
-  add("review_recency", "Recent reviews", age <= 30 ? true : age <= 90 ? "warn" : false, recPts, 10,
-    newest ? `Newest review Google surfaced is ${Math.round(age)} days old` : "No recent reviews",
-    "Keep a steady trickle of new reviews — Google and customers both weigh recency.");
+  // Only scored when Google actually returned the data (it sometimes omits reviews/photos).
+  if (p.reviews && p.reviews.length) {
+    const newest = Math.max(0, ...p.reviews.map((x) => x.at || 0));
+    const age = newest ? (Date.now() - newest) / DAY : Infinity;
+    const recPts = age <= 30 ? 10 : age <= 90 ? 6 : age <= 365 ? 2 : 0;
+    add("review_recency", "Recent reviews", age <= 30 ? true : age <= 90 ? "warn" : false, recPts, 10,
+      newest ? `Newest review Google surfaced is ${Math.round(age)} days old` : "No dated reviews",
+      "Keep a steady trickle of new reviews — Google and customers both weigh recency.");
+  }
 
   const ph = p.photoCount;
-  add("photos", "Photos on the listing", ph >= 10 ? true : ph >= 5 ? "warn" : false, ph >= 10 ? 10 : ph >= 5 ? 6 : ph >= 1 ? 3 : 0, 10,
-    ph >= 10 ? "10+ photos" : `${ph} photo${ph === 1 ? "" : "s"}`,
-    "Upload real photos — storefront, team, trucks, finished work. Aim for 10+ and add a few every month.");
+  if (ph != null) {
+    add("photos", "Photos on the listing", ph >= 10 ? true : ph >= 5 ? "warn" : false, ph >= 10 ? 10 : ph >= 5 ? 6 : ph >= 1 ? 3 : 0, 10,
+      ph >= 10 ? "10+ photos" : `${ph} photo${ph === 1 ? "" : "s"}`,
+      "Upload real photos — storefront, team, trucks, finished work. Aim for 10+ and add a few every month.");
+  }
 
   const specific = p.primaryType && !GENERIC_TYPES.has(p.primaryType);
   add("category", "Specific primary category", specific, specific ? 5 : 0, 5, p.typeLabel || p.primaryType || "No category",
@@ -114,7 +119,7 @@ export async function runAudit(env, placeId) {
   return {
     place: {
       id: place.id, name: place.name, address: place.address, city: place.city, mapsUri: place.mapsUri,
-      typeLabel: place.typeLabel, rating: place.rating, reviewCount: place.reviewCount, photoCount: place.photoCount,
+      typeLabel: place.typeLabel, category: competitorCategory(place), rating: place.rating, reviewCount: place.reviewCount, photoCount: place.photoCount,
       phone: place.phone, website: place.website, hours: place.hours, status: place.status,
     },
     score, grade: grade(score), listingScore, websiteScore, hasWebsite: Boolean(place.website),
@@ -138,7 +143,7 @@ export function derived(a) {
 // ---------------- fix-it plan ----------------
 export function factsFor(a) {
   return {
-    business_type: a.place.typeLabel || "local business",
+    business_type: a.place.category || a.place.typeLabel || "local business",
     city: a.place.city,
     overall_score: a.score, listing_score: a.listingScore, website_score: a.hasWebsite ? a.websiteScore : "no website",
     rating: a.place.rating, reviews: a.place.reviewCount, photos: a.place.photoCount,

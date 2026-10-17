@@ -73,7 +73,7 @@ export default function AdminAudit({ call, enabled }) {
             <table className="w-full max-w-2xl">
               <thead><tr className="text-left text-[#9E9AA3] font-mono text-[10px] uppercase tracking-[0.15em]"><th className="font-normal pb-1">Business</th><th className="font-normal">Rating</th><th className="font-normal">Reviews</th><th className="font-normal">Photos</th><th className="font-normal">Site</th></tr></thead>
               <tbody>{[...result.competitors.rows].sort((a, b) => b.reviewCount - a.reviewCount).map((r) => (
-                <tr key={r.id} className={`border-t border-white/8 ${r.you ? "text-[#E5A93C]" : ""}`}><td className="py-1 pr-3">{r.you ? `${r.name} (prospect)` : r.name}</td><td>{r.rating ?? "—"}</td><td>{r.reviewCount}</td><td>{r.photoCount}</td><td>{r.hasWebsite ? "yes" : "no"}</td></tr>
+                <tr key={r.id} className={`border-t border-white/8 ${r.you ? "text-[#E5A93C]" : ""}`}><td className="py-1 pr-3">{r.you ? `${r.name} (prospect)` : r.name}</td><td>{r.rating ?? "—"}</td><td>{r.reviewCount}</td><td>{r.photoCount ?? "—"}</td><td>{r.hasWebsite ? "yes" : "no"}</td></tr>
               ))}</tbody>
             </table>
           )}

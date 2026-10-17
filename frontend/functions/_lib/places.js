@@ -52,7 +52,8 @@ export async function placeDetails(env, placeId) {
   if (!/^[A-Za-z0-9_-]{10,300}$/.test(placeId || "")) { const e = new Error("Invalid place id"); e.status = 400; throw e; }
   const p = await places(env, "GET", `/v1/places/${encodeURIComponent(placeId)}`, null, DETAIL_FIELDS);
   const city = (p.addressComponents || []).find((c) => (c.types || []).includes("locality"))?.longText || "";
-  const reviews = (p.reviews || []).map((r) => ({ rating: r.rating, at: r.publishTime ? Date.parse(r.publishTime) : null }));
+  // Google sometimes leaves photos/reviews out entirely; null = unknown (not scored), [] = none.
+  const reviews = Array.isArray(p.reviews) ? p.reviews.map((r) => ({ rating: r.rating, at: r.publishTime ? Date.parse(r.publishTime) : null })) : null;
   return {
     id: p.id,
     name: p.displayName?.text || "",
@@ -70,7 +71,7 @@ export async function placeDetails(env, placeId) {
     hasHours: Boolean(p.regularOpeningHours?.periods?.length),
     rating: typeof p.rating === "number" ? p.rating : null,
     reviewCount: p.userRatingCount || 0,
-    photoCount: (p.photos || []).length, // the API returns at most 10
+    photoCount: Array.isArray(p.photos) ? p.photos.length : null, // the API returns at most 10; null = not returned
     reviews,
     hasDescription: Boolean(p.editorialSummary?.text),
   };
@@ -79,7 +80,7 @@ export async function placeDetails(env, placeId) {
 // Step 3: who they're up against — same category, near the same spot.
 export async function nearbyCompetitors(env, place, max = 5) {
   if (!place.location) return [];
-  const what = place.typeLabel || place.primaryType.replace(/_/g, " ") || "business";
+  const what = competitorCategory(place);
   const data = await places(env, "POST", "/v1/places:searchText", {
     textQuery: `${what}${place.city ? ` in ${place.city}` : ""}`,
     pageSize: Math.min(20, max + 4),
@@ -97,7 +98,37 @@ export async function nearbyCompetitors(env, place, max = 5) {
       reviewCount: p.userRatingCount || 0,
       hasWebsite: Boolean(p.websiteUri),
       hasHours: Boolean(p.regularOpeningHours?.periods?.length),
-      photoCount: (p.photos || []).length,
+      photoCount: Array.isArray(p.photos) ? p.photos.length : null,
       mapsUri: p.googleMapsUri || "",
     }));
+}
+
+// Google files many trades under broad types (an HVAC company is "General contractor"), which would
+// pull builders as "competitors". When the type is broad, infer the trade from the business name.
+const BROAD = new Set(["general_contractor", "establishment", "point_of_interest", "store", "service", "business", "premise", "home_goods_store"]);
+const TRADES = [
+  [/\b(hvac|heating|cooling|air\s*condition|a\/c|refrigeration|furnace|aire?\b|air\s)/i, "HVAC contractor"],
+  [/\b(plumb|rooter|drain|sewer|water\s*heater)/i, "plumber"],
+  [/\b(roof)/i, "roofing contractor"],
+  [/\b(electric)/i, "electrician"],
+  [/\b(landscap|lawn|tree\s*service|irrigation)/i, "landscaping company"],
+  [/\b(pest|termite|exterminat)/i, "pest control service"],
+  [/\b(solar)/i, "solar installer"],
+  [/\b(pool|spa\s*service)/i, "pool service"],
+  [/\b(concrete|paving|asphalt)/i, "concrete contractor"],
+  [/\b(paint)/i, "painting contractor"],
+  [/\b(garage\s*door)/i, "garage door service"],
+  [/\b(clean|maid|janitorial)/i, "cleaning service"],
+  [/\b(remodel|kitchen|bath)/i, "remodeling contractor"],
+  [/\b(construct|builder|build|contracting)/i, "general contractor"],
+];
+export function competitorCategory(place) {
+  if (place.primaryType && !BROAD.has(place.primaryType)) return place.typeLabel || place.primaryType.replace(/_/g, " ");
+  for (const [re, label] of TRADES) if (re.test(place.name)) return label;
+  return place.typeLabel || "business";
+}
+
+// Admin diagnostics: which fields Google actually returned for a place.
+export async function placeRaw(env, placeId) {
+  return places(env, "GET", `/v1/places/${encodeURIComponent(placeId)}`, null, "id,rating,userRatingCount,photos,reviews,primaryType,types");
 }

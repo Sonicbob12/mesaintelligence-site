@@ -3,7 +3,7 @@
 //   POST /api/admin/audit { query }       → candidate listings
 //   POST /api/admin/audit { place_id }    → full audit + AI plan, no rate limits (saved as source "admin")
 //   POST /api/admin/audit { audit_id }    → stored findings + plan for a past audit
-import { searchCandidates } from "../../_lib/places.js";
+import { searchCandidates, placeRaw } from "../../_lib/places.js";
 import { runAudit, derived, saveAudit, actionPlan, loadAudit, recentAudits } from "../../_lib/audit.js";
 import { json, readJSON, requireAdmin } from "../../_lib/http.js";
 
@@ -22,6 +22,10 @@ export async function onRequest({ request, env }) {
     }
     if (!env.GOOGLE_PLACES_API_KEY) return json({ detail: "GOOGLE_PLACES_API_KEY is not set in Cloudflare Pages secrets" }, 503);
     if (b.query) return json({ candidates: await searchCandidates(env, String(b.query).slice(0, 120)) });
+    if (b.place_id && b.debug) {
+      const raw = await placeRaw(env, String(b.place_id));
+      return json({ keys: Object.keys(raw), photos: Array.isArray(raw.photos) ? raw.photos.length : null, reviews: Array.isArray(raw.reviews) ? raw.reviews.length : null, primaryType: raw.primaryType, types: raw.types, rating: raw.rating, userRatingCount: raw.userRatingCount });
+    }
     if (b.place_id) {
       const audit = await runAudit(env, String(b.place_id));
       const data = derived(audit);

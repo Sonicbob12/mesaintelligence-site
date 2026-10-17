@@ -144,19 +144,19 @@ export default function LocalAudit() {
 
                 <div className="md:col-span-8 border border-white/10 bg-[#14161A] p-8 overflow-x-auto">
                   <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#9E9AA3] mb-4">
-                    You vs. {audit.competitors.count - 1} nearby {audit.place.typeLabel ? audit.place.typeLabel.toLowerCase() + "s" : "competitors"}
+                    You vs. {audit.competitors.count - 1} nearby {(audit.place.category || audit.place.typeLabel) ? `${(audit.place.category || audit.place.typeLabel).toLowerCase()}s` : "competitors"}
                   </div>
                   {audit.competitors.count > 1 ? (
                     <>
                       <table className="w-full text-sm" data-testid="audit-competitors">
-                        <thead><tr className="text-left text-[#9E9AA3] font-mono text-[10px] uppercase tracking-[0.15em]"><th className="pb-2 font-normal">Business</th><th className="pb-2 font-normal">Rating</th><th className="pb-2 font-normal">Reviews</th><th className="pb-2 font-normal">Photos</th></tr></thead>
+                        <thead><tr className="text-left text-[#9E9AA3] font-mono text-[10px] uppercase tracking-[0.15em]"><th className="pb-2 font-normal">Business</th><th className="pb-2 font-normal">Rating</th><th className="pb-2 font-normal">Reviews</th>{audit.competitors.rows.some((r) => r.photoCount != null) && <th className="pb-2 font-normal">Photos</th>}</tr></thead>
                         <tbody>
                           {[...audit.competitors.rows].sort((a, b) => b.reviewCount - a.reviewCount).map((r) => (
                             <tr key={r.id} className={`border-t border-white/8 ${r.you ? "text-[#E5A93C]" : ""}`}>
                               <td className="py-2 pr-4 max-w-[220px] truncate">{r.you ? "You" : r.name}</td>
                               <td className="py-2 pr-4 whitespace-nowrap">{r.rating != null ? <span className="inline-flex items-center gap-1">{r.rating.toFixed(1)} <Star className="w-3 h-3" fill="currentColor" strokeWidth={0} /></span> : "—"}</td>
                               <td className="py-2 pr-4">{r.reviewCount}</td>
-                              <td className="py-2 pr-4">{r.photoCount >= 10 ? "10+" : r.photoCount}</td>
+                              {audit.competitors.rows.some((x) => x.photoCount != null) && <td className="py-2 pr-4">{r.photoCount == null ? "—" : r.photoCount >= 10 ? "10+" : r.photoCount}</td>}
                             </tr>
                           ))}
                         </tbody>
