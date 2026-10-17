@@ -20,7 +20,7 @@ export async function onRequest({ request, env }) {
     const byNumber = Object.fromEntries(tenants.filter((t) => t.voice_number).map((t) => [t.voice_number, t.id]));
     return json({
       origin,
-      numbers: (numbers || []).map((n) => ({ number: n.phone_number, pretty: n.phone_number_pretty, agent: n.inbound_agent_id || null, tenant: byNumber[n.phone_number] || null, inbound_webhook: n.inbound_webhook_url || null })),
+      numbers: (numbers || []).map((n) => ({ number: n.phone_number, pretty: n.phone_number_pretty, agent: n.inbound_agents?.[0]?.agent_id || n.inbound_agent_id || null, tenant: byNumber[n.phone_number] || null, inbound_webhook: n.inbound_webhook_url || null })),
       agents: tenants.filter((t) => t.retell_agent_id).map((t) => ({ tenant: t.id, agent_id: t.retell_agent_id, voice_number: t.voice_number })),
     });
   }

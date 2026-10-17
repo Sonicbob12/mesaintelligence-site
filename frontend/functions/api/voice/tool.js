@@ -3,7 +3,7 @@
 // return { result } for the voice model to speak. Verified with X-Retell-Signature.
 
 import { verifyRetell } from "../../_lib/retell.js";
-import { loadTenant, tenantByVoiceNumber } from "../../_lib/tenants.js";
+import { loadTenant, tenantByVoiceNumber, rowToTenant } from "../../_lib/tenants.js";
 import { runTool } from "../../_lib/tools.js";
 import { json } from "../../_lib/http.js";
 
@@ -31,7 +31,6 @@ export async function tenantForCall(env, call) {
 
 async function tenantByAgentId(env, agentId) {
   if (!env.DB) return null;
-  const { rowToTenant } = await import("../../_lib/tenants.js");
   const row = await env.DB.prepare("SELECT * FROM tenants WHERE retell_agent_id = ? AND active = 1").bind(agentId).first();
   return row ? rowToTenant(row) : null;
 }

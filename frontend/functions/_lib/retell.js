@@ -149,8 +149,14 @@ export async function provisionVoiceAgent(env, tenant, siteOrigin) {
 }
 
 // Point a purchased Retell number at the tenant's agent and remember it.
+// Retell replaced inbound_agent_id with a weighted agent list (March 2026); the entry needs the agent's version.
 export async function assignNumber(env, tenant, number, agentId) {
-  await retell(env, "PATCH", `/update-phone-number/${encodeURIComponent(number)}`, { inbound_agent_id: agentId, nickname: tenant.name });
+  let agent_version = 0;
+  try { const a = await retell(env, "GET", `/get-agent/${agentId}`); if (Number.isFinite(Number(a?.version))) agent_version = Number(a.version); } catch (e) { console.error("get-agent", e?.message || e); }
+  await retell(env, "PATCH", `/update-phone-number/${encodeURIComponent(number)}`, {
+    inbound_agents: [{ agent_id: agentId, agent_version, weight: 1 }],
+    nickname: tenant.name,
+  });
   if (hasDB(env)) await env.DB.prepare("UPDATE tenants SET voice_number = ? WHERE id = ?").bind(number, tenant.id).run();
 }
 
