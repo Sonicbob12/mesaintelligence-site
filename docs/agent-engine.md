@@ -81,3 +81,26 @@ npx wrangler pages dev build --d1 DB=mesa-agents --persist-to .wrangler/state
 npx wrangler d1 execute DB -c /path/to/wrangler.test.toml --local --persist-to .wrangler/state --file=schema.sql
 ```
 `node scripts/gen-schema.mjs > schema.sql` regenerates the seed from the demo tenant code.
+
+## Voice (Smart Call Dispatch) — Retell AI
+Same tools, same database; Retell handles telephony, speech, and the voice model.
+
+Setup once:
+1. Retell dashboard → API Keys → create a key → Cloudflare Pages → Variables and Secrets → `RETELL_API_KEY` (Secret, Production + Preview) → redeploy.
+2. Retell dashboard → Phone Numbers → buy a number (575 or 915). Don't assign it in Retell; the admin page does that.
+3. Open `https://mesaintelligence.ai/admin`, paste `ADMIN_TOKEN`, pick the business, click **Create voice agent**. Paste the number and click **Assign number**.
+   This builds a Retell LLM + agent from the tenant's persona/hours/services/knowledge, points the number at it, and sets the inbound webhook.
+4. Re-run **Update voice agent** whenever you change a tenant's persona or knowledge (the chat picks changes up instantly; the voice agent needs this click).
+
+Optional variables: `RETELL_VOICE_ID` (default 11labs-Adrian), `RETELL_MODEL` (falls back to Retell's default if the name is rejected),
+`WEBCALL_IP_LIMIT_PER_HOUR` (3), `WEBCALL_DAILY_CAP` (40 browser calls/day for demo tenants), `SITE_ORIGIN` (webhook base; defaults to the request origin).
+Per-tenant fields: `voice_number` (E.164), `transfer_number` (adds a transfer-to-office tool), `voice_id`.
+
+Endpoints Retell calls (all verified with X-Retell-Signature using RETELL_API_KEY):
+- `POST /api/voice/tool` — custom functions check_availability / book_appointment / escalate_to_human / capture_lead
+- `POST /api/voice/inbound` — inbound-call webhook: picks the tenant by number, sets current_time + metadata
+- `POST /api/voice/webhook` — call_ended / call_analyzed: stores transcript + summary as a voice conversation, files a lead when follow-up is needed, emails the business
+Site: `POST /api/voice/web-call { tenant }` returns a short-lived token for the "Call from your browser" button (retell-client-js-sdk).
+
+## Admin console
+`/admin` — paste ADMIN_TOKEN (kept in the tab's sessionStorage). Shows system health, per-business bookings/leads/hand-offs/conversations with transcripts, and the voice setup controls.

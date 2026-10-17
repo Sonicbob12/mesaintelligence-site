@@ -8,3 +8,7 @@
 /widget.js
   Cache-Control: public, max-age=3600
   Access-Control-Allow-Origin: *
+
+/admin
+  X-Robots-Tag: noindex
+  Cache-Control: no-store

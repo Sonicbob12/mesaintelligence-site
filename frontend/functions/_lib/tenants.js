@@ -158,6 +158,8 @@ export function rowToTenant(r) {
     hours: safeJSON(r.hours_json, {}), slot_minutes: r.slot_minutes || 60,
     services: safeJSON(r.services_json, []), escalation: r.escalation || "",
     notify_email: r.notify_email || null, sms_number: r.sms_number || null,
+    voice_number: r.voice_number || null, transfer_number: r.transfer_number || null, voice_id: r.voice_id || null,
+    retell_agent_id: r.retell_agent_id || null, retell_llm_id: r.retell_llm_id || null,
     demo: Boolean(r.demo), active: r.active !== 0,
   };
 }
@@ -168,12 +170,23 @@ export function tenantToRow(t) {
     JSON.stringify(t.presets || []), t.persona || "", JSON.stringify(t.hours || {}), t.slot_minutes || 60,
     JSON.stringify(t.services || []), t.escalation || "", t.notify_email || null, t.sms_number || null,
     t.demo ? 1 : 0, t.active === false ? 0 : 1,
+    t.voice_number || null, t.transfer_number || null, t.voice_id || null,
   ];
 }
 
 // Public (client-safe) view: no persona/escalation text.
 export function publicTenant(t) {
-  return { id: t.id, name: t.name, vertical: t.vertical, greeting: t.greeting, presets: t.presets, demo: Boolean(t.demo), timezone: t.timezone };
+  return { id: t.id, name: t.name, vertical: t.vertical, greeting: t.greeting, presets: t.presets, demo: Boolean(t.demo), timezone: t.timezone,
+           voice_number: t.voice_number || null, voice: Boolean(t.retell_agent_id) };
+}
+
+export async function tenantByVoiceNumber(env, number) {
+  if (!number) return null;
+  if (hasDB(env)) {
+    const row = await env.DB.prepare("SELECT * FROM tenants WHERE voice_number = ? AND active = 1").bind(number).first();
+    if (row) return rowToTenant(row);
+  }
+  return Object.values(DEMO_TENANTS).find((t) => t.voice_number === number) || null;
 }
 
 // Built-in knowledge for demo tenants (used when D1 has no rows for them).

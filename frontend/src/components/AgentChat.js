@@ -146,11 +146,14 @@ function Bubble({ msg, pending }) {
     <div className={`flex ${user ? "justify-end" : "justify-start"}`}>
       <div className={`max-w-[82%] px-4 py-3 text-sm sm:text-[15px] font-light leading-relaxed whitespace-pre-wrap ${
         user ? "bg-[#D96B43] text-[#0B0C0E]" : "bg-[#0B0C0E] border border-white/10 text-[#F5F3EF]/90"}`}>
-        {msg.text || (pending ? <Loader2 className="w-4 h-4 animate-spin text-[#D96B43]" /> : "")}
+        {msg.text ? plain(msg.text) : (pending ? <Loader2 className="w-4 h-4 animate-spin text-[#D96B43]" /> : "")}
       </div>
     </div>
   );
 }
+
+// The agent is told not to use markdown; strip the odd **bold** / *italic* that slips through.
+const plain = (t) => t.replace(/\*\*(.+?)\*\*/g, "$1").replace(/(^|\s)\*(\S[^*]*\S)\*(?=\s|$)/g, "$1$2");
 
 function appendToLastAssistant(m, text) {
   const arr = [...m];
