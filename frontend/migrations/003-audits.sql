@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS audits (id TEXT PRIMARY KEY, place_id TEXT NOT NULL, query TEXT, source TEXT NOT NULL DEFAULT 'public', score INTEGER, grade TEXT, data_json TEXT NOT NULL DEFAULT '{}', plan_json TEXT, contact_name TEXT, contact_email TEXT, contact_phone TEXT, business_name TEXT, ip TEXT, created_at INTEGER NOT NULL, reported_at INTEGER);
+CREATE INDEX IF NOT EXISTS audits_created ON audits (created_at);

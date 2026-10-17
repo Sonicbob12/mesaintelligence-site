@@ -21,6 +21,7 @@ export async function onRequestGet({ env }) {
     lead_to: env.LEAD_TO || null,
     twilio: Boolean(env.TWILIO_AUTH_TOKEN),
     retell: Boolean(env.RETELL_API_KEY),
+    places: Boolean(env.GOOGLE_PLACES_API_KEY),
     admin: Boolean(env.ADMIN_TOKEN),
     db,
     storage: hasDB(env) ? "d1" : "memory (sessions reset; bind D1 as DB to persist)",

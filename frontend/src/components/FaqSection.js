@@ -30,7 +30,7 @@ export default function FaqSection() {
     <section id="faq" className="px-6 sm:px-12 lg:px-20 py-24 sm:py-32">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
         <div className="lg:col-span-5">
-          <ChapterBadge number="06" title="Frequent Inquiries" />
+          <ChapterBadge number="07" title="Frequent Inquiries" />
           <motion.h2
             initial={{ opacity: 0, y: 28 }}
             whileInView={{ opacity: 1, y: 0 }}

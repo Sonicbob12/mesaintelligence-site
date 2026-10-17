@@ -85,6 +85,22 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   count INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS audits (
+  id TEXT PRIMARY KEY,
+  place_id TEXT NOT NULL,
+  query TEXT,
+  source TEXT NOT NULL DEFAULT 'public',
+  score INTEGER,
+  grade TEXT,
+  data_json TEXT NOT NULL DEFAULT '{}',
+  plan_json TEXT,
+  contact_name TEXT, contact_email TEXT, contact_phone TEXT, business_name TEXT,
+  ip TEXT,
+  created_at INTEGER NOT NULL,
+  reported_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS audits_created ON audits (created_at);
+
 INSERT INTO tenants (id, name, vertical, timezone, greeting, presets_json, persona, hours_json, slot_minutes, services_json, escalation, notify_email, sms_number, demo, active)
 VALUES ('desert-peak-hvac', 'Desert Peak HVAC', 'hvac', 'America/Denver', 'Desert Peak HVAC, this is Mesa — how can I help you today?', '["My AC died and it''s 110° outside","Do you offer maintenance plans?","Book me a tune-up next week"]', 'You are the AI dispatch assistant for Desert Peak HVAC, a family-run heating and cooling company in Las Cruces, NM. Act like their best front-desk dispatcher: warm, quick, and always moving toward a booked job. Triage first: no cooling in extreme heat, gas smell, or water leaking near electrical is an EMERGENCY — offer the next emergency slot and quote the after-hours fee. Keep replies to 2–4 sentences. Never invent prices or policies; use the knowledge provided. If something is outside what you know, say so and offer a callback.', '{"mon":["07:00","19:00"],"tue":["07:00","19:00"],"wed":["07:00","19:00"],"thu":["07:00","19:00"],"fri":["07:00","19:00"],"sat":["07:00","19:00"],"sun":null}', 120, '[{"name":"Diagnostic visit","minutes":120,"price":89},{"name":"AC tune-up","minutes":90,"price":129},{"name":"Furnace tune-up","minutes":90,"price":129},{"name":"Emergency service","minutes":120,"price":89,"note":"after-hours fee, plus repair"},{"name":"Maintenance plan enrollment","minutes":30,"price":18,"note":"per month"}]', 'Escalate to a human for: gas smell (tell caller to leave the house and call the gas company first), commercial jobs, warranty disputes, anything about pricing a full system replacement.', NULL, NULL, 1, 1)
 ON CONFLICT(id) DO UPDATE SET name=excluded.name, vertical=excluded.vertical, timezone=excluded.timezone, greeting=excluded.greeting, presets_json=excluded.presets_json, persona=excluded.persona, hours_json=excluded.hours_json, slot_minutes=excluded.slot_minutes, services_json=excluded.services_json, escalation=excluded.escalation, notify_email=excluded.notify_email, sms_number=excluded.sms_number, demo=excluded.demo, active=excluded.active;

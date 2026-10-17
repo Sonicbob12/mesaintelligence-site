@@ -104,3 +104,23 @@ Site: `POST /api/voice/web-call { tenant }` returns a short-lived token for the 
 
 ## Admin console
 `/admin` — paste ADMIN_TOKEN (kept in the tab's sessionStorage). Shows system health, per-business bookings/leads/hand-offs/conversations with transcripts, and the voice setup controls.
+
+## Local Discovery audit (Google Places)
+Free listing + website audit on the homepage (section 05, `#audit`) and an unlimited version in `/admin`.
+
+Setup once:
+1. Google Cloud (bobby@mesaintelligence.ai) → project "Mesa Intelligence" → billing on → enable **Places API (New)** → Credentials → API key, restricted to Places API (New).
+2. Cloudflare Pages → Variables and Secrets → `GOOGLE_PLACES_API_KEY` (Secret, Production + Preview).
+3. D1 console → run `frontend/migrations/003-audits.sql` (creates the `audits` table). Then redeploy.
+4. Check `/api/health` → `"places": true`.
+
+Flow: `POST /api/audit/search {query}` → pick a listing → `POST /api/audit/run {place_id}` returns score, checks, competitors (AI plan builds in the background) →
+`POST /api/audit/report {audit_id, name, email}` returns the plan, emails the owner the report and LEAD_TO a lead alert.
+Admin: `GET/POST /api/admin/audit` ({query} | {place_id} | {audit_id}).
+
+Scoring: listing 65% (hours 12, phone 8, website link 10, rating 15, review count vs. local median 15, review recency 10, photos 10, specific category 5) + website 35%
+(loads, https, speed, mobile viewport, title, meta description, phone matches Google, tap-to-call, booking/form, LocalBusiness schema). Grades A ≥85, B ≥70, C ≥55, D ≥40.
+
+Cost per public audit ≈ $0.09 Google (Text Search Pro + Place Details Enterprise+Atmosphere + Text Search Enterprise) + a small Claude call; first ~1,000/month free.
+Limits (env overrides): `AUDIT_IP_LIMIT_PER_DAY` 3, `AUDIT_DAILY_CAP` 50, `AUDIT_SEARCH_LIMIT_PER_HOUR` 15, `AUDIT_SEARCH_DAILY_CAP` 300, `AUDIT_REPORT_LIMIT_PER_DAY` 5.
+Google terms: only place IDs are stored long-term; the `audits` table keeps our derived scores/findings, the plan, and the contact. Show "Google Maps" attribution wherever listing data appears.
