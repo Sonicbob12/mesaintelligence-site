@@ -124,3 +124,23 @@ Scoring: listing 65% (hours 12, phone 8, website link 10, rating 15, review coun
 Cost per public audit ≈ $0.09 Google (Text Search Pro + Place Details Enterprise+Atmosphere + Text Search Enterprise) + a small Claude call; first ~1,000/month free.
 Limits (env overrides): `AUDIT_IP_LIMIT_PER_DAY` 3, `AUDIT_DAILY_CAP` 50, `AUDIT_SEARCH_LIMIT_PER_HOUR` 15, `AUDIT_SEARCH_DAILY_CAP` 300, `AUDIT_REPORT_LIMIT_PER_DAY` 5.
 Google terms: only place IDs are stored long-term; the `audits` table keeps our derived scores/findings, the plan, and the contact. Show "Google Maps" attribution wherever listing data appears.
+
+## Workflow Intelligence (what happens after the conversation)
+Every booking, lead, hand-off and finished call triggers a chain (`functions/_lib/workflow.js`), recorded step-by-step in `workflow_runs`:
+1. Confirmation / acknowledgement text to the customer (Twilio) · 2. Google Calendar event (bookings) · 3. Row in a Google Sheet (CRM) ·
+4. Owner email (now) · 5. Day-before reminder text (bookings). Plus a daily digest email per business at `digest_hour`.
+Unconfigured steps are recorded as "skipped", never fail the conversation. The homepage section 06 shows the visitor's own chain live; `/admin → Workflows` shows every run, lets you set per-business settings and fire a test chain.
+
+Setup once (Cloudflare → Variables and Secrets, Production + Preview, then redeploy):
+- **Texting:** Twilio → buy a number → `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` (secrets), `TWILIO_FROM` (+1…). A client with its own number: set the tenant's `sms_number`.
+  Demo guard: placeholder numbers (555-, repeated digits) are never texted; `DEMO_SMS_DAILY_CAP` (30).
+- **Google Calendar + Sheets:** Google Cloud project "Mesa Intelligence" → enable *Google Calendar API* and *Google Sheets API* → IAM → Service Accounts → create (e.g. `mesa-workflows`) → Keys → JSON.
+  Set `GOOGLE_SA_EMAIL` (the client_email) and `GOOGLE_SA_KEY` (the private_key value, keep the `\n`s) as secrets.
+  Then share each calendar ("Make changes to events") and sheet ("Editor") with that service-account email. Per business: `/admin → Workflows → Calendar ID / Sheet ID`.
+  Demo businesses use `DEMO_CALENDAR_ID` / `DEMO_SHEET_ID` / `DEMO_NOTIFY_EMAIL` env vars.
+- **Reminders + digests:** set `CRON_TOKEN` (any long random string) and have an external scheduler call `https://mesaintelligence.ai/api/cron/tick?token=<CRON_TOKEN>` every hour
+  (cron-job.org is free). Pages has no built-in scheduler.
+- Database: run `frontend/migrations/004-workflows.sql` in the D1 console.
+
+Per-business settings (`tenants.workflows_json`, editable in `/admin`): `sms`, `reminders`, `calendar_id`, `sheet_id`, `sheet_tab`, `digest_hour`.
+Admin API: `GET /api/admin/workflows?tenant=`, `PUT` (settings), `POST {tenant, test:true, phone?}` (test chain). Public: `GET /api/workflow/runs?conversation=` (demo tenants only, redacted).

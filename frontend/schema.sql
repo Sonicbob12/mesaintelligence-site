@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS tenants (
   transfer_number TEXT,
   voice_id TEXT,
   retell_agent_id TEXT,
-  retell_llm_id TEXT
+  retell_llm_id TEXT,
+  workflows_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS tenants_sms ON tenants (sms_number);
 CREATE INDEX IF NOT EXISTS tenants_voice ON tenants (voice_number);
@@ -100,6 +101,23 @@ CREATE TABLE IF NOT EXISTS audits (
   reported_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS audits_created ON audits (created_at);
+
+CREATE TABLE IF NOT EXISTS workflow_runs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  conversation_id TEXT,
+  trigger TEXT NOT NULL,
+  ref_id TEXT,
+  status TEXT NOT NULL DEFAULT 'running',
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  reminder_due INTEGER,
+  reminder_sent INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS workflow_runs_conv ON workflow_runs (conversation_id);
+CREATE INDEX IF NOT EXISTS workflow_runs_tenant ON workflow_runs (tenant_id, created_at);
+CREATE INDEX IF NOT EXISTS workflow_runs_reminder ON workflow_runs (reminder_due, reminder_sent);
 
 INSERT INTO tenants (id, name, vertical, timezone, greeting, presets_json, persona, hours_json, slot_minutes, services_json, escalation, notify_email, sms_number, demo, active)
 VALUES ('desert-peak-hvac', 'Desert Peak HVAC', 'hvac', 'America/Denver', 'Desert Peak HVAC, this is Mesa — how can I help you today?', '["My AC died and it''s 110° outside","Do you offer maintenance plans?","Book me a tune-up next week"]', 'You are the AI dispatch assistant for Desert Peak HVAC, a family-run heating and cooling company in Las Cruces, NM. Act like their best front-desk dispatcher: warm, quick, and always moving toward a booked job. Triage first: no cooling in extreme heat, gas smell, or water leaking near electrical is an EMERGENCY — offer the next emergency slot and quote the after-hours fee. Keep replies to 2–4 sentences. Never invent prices or policies; use the knowledge provided. If something is outside what you know, say so and offer a callback.', '{"mon":["07:00","19:00"],"tue":["07:00","19:00"],"wed":["07:00","19:00"],"thu":["07:00","19:00"],"fri":["07:00","19:00"],"sat":["07:00","19:00"],"sun":null}', 120, '[{"name":"Diagnostic visit","minutes":120,"price":89},{"name":"AC tune-up","minutes":90,"price":129},{"name":"Furnace tune-up","minutes":90,"price":129},{"name":"Emergency service","minutes":120,"price":89,"note":"after-hours fee, plus repair"},{"name":"Maintenance plan enrollment","minutes":30,"price":18,"note":"per month"}]', 'Escalate to a human for: gas smell (tell caller to leave the house and call the gas company first), commercial jobs, warranty disputes, anything about pricing a full system replacement.', NULL, NULL, 1, 1)

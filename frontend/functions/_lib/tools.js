@@ -2,8 +2,8 @@
 //   { result: string (what the model sees), event?: { name, summary, data } (what the UI shows) }
 
 import { bookingsBetween, insertBooking, insertHandoff, insertLead } from "./db.js";
+import { runWorkflow } from "./workflow.js";
 import { fmt, localDate, openSlots, parseWhen } from "./time.js";
-import { notify } from "./notify.js";
 
 export const TOOL_DEFS = [
   {
@@ -108,9 +108,7 @@ export async function runTool(env, ctx, name, input) {
         });
         const when = fmt(startMs, tz);
         const code = rec.id.slice(-6).toUpperCase();
-        await notify(env, tenant, `New booking: ${rec.customer_name} — ${when}`, [
-          ["Customer", rec.customer_name], ["Phone", rec.phone || "-"], ["Service", rec.service || "-"], ["When", when], ["Notes", rec.notes || "-"], ["Confirmation", code],
-        ]);
+        await after(ctx, runWorkflow(env, tenant, conversationId, { kind: "booking", rec }));
         return {
           result: `Booked. Confirmation ${code}: ${rec.customer_name}, ${rec.service || "appointment"}, ${when}. Tell the customer the confirmation code and what to expect.`,
           event: { name, summary: `Booked ${rec.service || "appointment"} · ${when} · #${code}`, data: { confirmation: code, when, service: rec.service, customer: rec.customer_name } },
@@ -123,9 +121,7 @@ export async function runTool(env, ctx, name, input) {
           reason: String(input.reason || "").slice(0, 500), urgency: input.urgency === "urgent" ? "urgent" : "normal",
           callback_phone: input.callback_phone ? String(input.callback_phone).slice(0, 40) : null,
         });
-        await notify(env, tenant, `${rec.urgency === "urgent" ? "URGENT " : ""}Handoff requested`, [
-          ["Reason", rec.reason], ["Urgency", rec.urgency], ["Callback", rec.callback_phone || "-"], ["Conversation", conversationId || "-"],
-        ]);
+        await after(ctx, runWorkflow(env, tenant, conversationId, { kind: "handoff", rec }));
         const eta = rec.urgency === "urgent" ? "within 15 minutes during business hours" : "within one business day";
         return {
           result: `Handoff logged (${rec.urgency}). A team member will follow up ${eta}. Tell the customer this and confirm the callback number.`,
@@ -139,9 +135,7 @@ export async function runTool(env, ctx, name, input) {
           name: input.name ? String(input.name).slice(0, 120) : null, phone: input.phone ? String(input.phone).slice(0, 40) : null,
           email: input.email ? String(input.email).slice(0, 200) : null, summary: String(input.summary || "").slice(0, 1000),
         });
-        await notify(env, tenant, `New lead: ${rec.name || "unknown"}`, [
-          ["Name", rec.name || "-"], ["Phone", rec.phone || "-"], ["Email", rec.email || "-"], ["Summary", rec.summary],
-        ]);
+        await after(ctx, runWorkflow(env, tenant, conversationId, { kind: "lead", rec }));
         return {
           result: "Lead saved. Confirm to the customer that someone will reach out, and ask if there's anything else.",
           event: { name, summary: `Saved lead${rec.name ? `: ${rec.name}` : ""}`, data: { name: rec.name } },
@@ -155,6 +149,13 @@ export async function runTool(env, ctx, name, input) {
     console.error("tool error", name, e?.message || e);
     return { result: `The ${name} action failed on our side. Apologize briefly and offer a callback instead.` };
   }
+}
+
+// Run the post-conversation chain. Voice calls must answer Retell fast, so there it runs in the
+// background (ctx.waitUntil); chat awaits it so the live demo panel can show the finished chain.
+async function after(ctx, promise) {
+  const p = promise.catch((e) => console.error("workflow", e?.message || e));
+  if (typeof ctx.waitUntil === "function") ctx.waitUntil(p); else await p;
 }
 
 function findService(tenant, name) {

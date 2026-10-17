@@ -8,11 +8,11 @@ import { hasDB } from "../../_lib/db.js";
 import { listTenants, tenantToRow } from "../../_lib/tenants.js";
 import { json, readJSON, requireAdmin } from "../../_lib/http.js";
 
-const UPSERT = `INSERT INTO tenants (id, name, vertical, timezone, greeting, presets_json, persona, hours_json, slot_minutes, services_json, escalation, notify_email, sms_number, demo, active, voice_number, transfer_number, voice_id)
-VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
+const UPSERT = `INSERT INTO tenants (id, name, vertical, timezone, greeting, presets_json, persona, hours_json, slot_minutes, services_json, escalation, notify_email, sms_number, demo, active, voice_number, transfer_number, voice_id, workflows_json)
+VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
 ON CONFLICT(id) DO UPDATE SET name=?2, vertical=?3, timezone=?4, greeting=?5, presets_json=?6, persona=?7, hours_json=?8, slot_minutes=?9,
   services_json=?10, escalation=?11, notify_email=?12, sms_number=?13, demo=?14, active=?15,
-  voice_number=COALESCE(?16, voice_number), transfer_number=?17, voice_id=?18`;
+  voice_number=COALESCE(?16, voice_number), transfer_number=?17, voice_id=?18, workflows_json=?19`;
 
 export async function onRequest({ request, env }) {
   const denied = requireAdmin(request, env);

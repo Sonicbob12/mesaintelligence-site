@@ -6,8 +6,8 @@ const services = [
   {
     icon: MessageSquareText,
     title: "Conversational Agents",
-    desc: "Custom chat and web agents trained on your menu, your services, your voice. They answer like your best employee — at 2pm or 2am.",
-    metric: "Chat, web, and SMS — trained on your business",
+    desc: "Chat and web agents that run on your menu, your services, your voice — and book real appointments. They answer like your best employee, at 2pm or 2am.",
+    metric: "Chat, web, and SMS — runs on your business knowledge",
     span: "lg:col-span-7",
   },
   {
@@ -20,15 +20,15 @@ const services = [
   {
     icon: Workflow,
     title: "Workflow Intelligence",
-    desc: "We wire AI into the tools you already run — CRM, scheduling, invoicing — so follow-ups, reminders, and paperwork happen on their own.",
+    desc: "What happens after the conversation: confirmation texts, calendar events, CRM rows, and an owner's digest — on their own, in the tools you already run.",
     metric: "Works with the software you already pay for",
     span: "lg:col-span-5",
   },
   {
     icon: MapPin,
     title: "Local Discovery",
-    desc: "AI-assisted local SEO and review response that keeps you at the top of the map when neighbors search.",
-    metric: "Google Business Profile, reviews, and local search",
+    desc: "A free audit of your Google listing and website, scored against the competitors people see right next to you — then a prioritized fix-it plan you can act on this week.",
+    metric: "Free audit below · Google Business Profile, reviews, local search",
     span: "lg:col-span-7",
   },
 ];

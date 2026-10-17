@@ -48,7 +48,7 @@ export default function ContactFormSection() {
     <section id="contact" className="px-6 sm:px-12 lg:px-20 py-24 sm:py-32 lg:py-40 bg-[#0D0E11] border-t border-white/8">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-20">
         <div className="lg:col-span-5">
-          <ChapterBadge number="08" title="Consultation Dispatch" />
+          <ChapterBadge number="09" title="Consultation Dispatch" />
           <motion.h2
             initial={{ opacity: 0, y: 28 }}
             whileInView={{ opacity: 1, y: 0 }}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw, LogOut } from "lucide-react";
 import AdminAudit from "@/components/AdminAudit";
+import AdminWorkflows from "@/components/AdminWorkflows";
 
 // /admin — minimal operator console. Paste the ADMIN_TOKEN (kept in this tab only).
 const API = "/api";
@@ -104,6 +105,7 @@ export default function AdminPage() {
               <Pill ok={health.resend} label={`Email → ${health.lead_to || "not set"}`} />
               <Pill ok={health.retell} label="Retell (voice)" />
               <Pill ok={health.twilio} label="Twilio (SMS)" />
+              <Pill ok={health.google} label="Google Calendar/Sheets" />
               <Pill ok={health.places} label="Google Places (audits)" />
             </div>
           </section>
@@ -155,6 +157,8 @@ export default function AdminPage() {
             )}
           </div>
         </section>
+
+        {health && tenantId && <AdminWorkflows call={call} tenantId={tenantId} />}
 
         {health && <AdminAudit call={call} enabled={health.places} />}
 

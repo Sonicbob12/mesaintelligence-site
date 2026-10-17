@@ -160,6 +160,7 @@ export function rowToTenant(r) {
     notify_email: r.notify_email || null, sms_number: r.sms_number || null,
     voice_number: r.voice_number || null, transfer_number: r.transfer_number || null, voice_id: r.voice_id || null,
     retell_agent_id: r.retell_agent_id || null, retell_llm_id: r.retell_llm_id || null,
+    workflows: safeJSON(r.workflows_json, {}),
     demo: Boolean(r.demo), active: r.active !== 0,
   };
 }
@@ -171,6 +172,7 @@ export function tenantToRow(t) {
     JSON.stringify(t.services || []), t.escalation || "", t.notify_email || null, t.sms_number || null,
     t.demo ? 1 : 0, t.active === false ? 0 : 1,
     t.voice_number || null, t.transfer_number || null, t.voice_id || null,
+    JSON.stringify(t.workflows || {}),
   ];
 }
 

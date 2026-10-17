@@ -12,7 +12,7 @@ const steps = [
   {
     num: "02",
     title: "Build",
-    body: "We build the agent on your own accounts, trained on your services, your prices, and the way you talk to customers. No replatforming, nothing new for staff to learn.",
+    body: "We build the agent on your own accounts, running on your services, your prices, and the way you talk to customers. No replatforming, nothing new for staff to learn.",
     out: "Working agent in a private test environment",
     span: "lg:col-span-5",
   },
@@ -35,7 +35,7 @@ const steps = [
 export default function ProcessSection() {
   return (
     <section id="process" className="px-6 sm:px-12 lg:px-20 py-24 sm:py-32 bg-[#0D0E11] border-y border-white/8">
-      <ChapterBadge number="06" title="How an Engagement Runs" />
+      <ChapterBadge number="07" title="How an Engagement Runs" />
       <motion.h2
         initial={{ opacity: 0, y: 28 }}
         whileInView={{ opacity: 1, y: 0 }}

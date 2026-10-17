@@ -7,7 +7,7 @@ import { loadTenant, tenantByVoiceNumber, rowToTenant } from "../../_lib/tenants
 import { runTool } from "../../_lib/tools.js";
 import { json } from "../../_lib/http.js";
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, waitUntil }) {
   const raw = await request.text();
   if (!(await verifyRetell(env, raw, request.headers.get("x-retell-signature")))) return json({ result: "Unauthorized" }, 401);
 
@@ -16,7 +16,7 @@ export async function onRequestPost({ request, env }) {
   const tenant = await tenantForCall(env, call);
   if (!tenant) return json({ result: "This line isn't configured for a business yet. Apologize and offer to take a message." });
 
-  const ctx = { tenant, conversationId: call.call_id || null, channel: "voice" };
+  const ctx = { tenant, conversationId: call.call_id || null, channel: "voice", waitUntil };
   const out = await runTool(env, ctx, name, args);
   return json({ result: out.result });
 }

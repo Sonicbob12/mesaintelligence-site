@@ -25,7 +25,8 @@ const ddl = `CREATE TABLE IF NOT EXISTS tenants (
   transfer_number TEXT,
   voice_id TEXT,
   retell_agent_id TEXT,
-  retell_llm_id TEXT
+  retell_llm_id TEXT,
+  workflows_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS tenants_sms ON tenants (sms_number);
 CREATE INDEX IF NOT EXISTS tenants_voice ON tenants (voice_number);
@@ -109,6 +110,23 @@ CREATE TABLE IF NOT EXISTS audits (
   reported_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS audits_created ON audits (created_at);
+
+CREATE TABLE IF NOT EXISTS workflow_runs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  conversation_id TEXT,
+  trigger TEXT NOT NULL,
+  ref_id TEXT,
+  status TEXT NOT NULL DEFAULT 'running',
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  reminder_due INTEGER,
+  reminder_sent INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS workflow_runs_conv ON workflow_runs (conversation_id);
+CREATE INDEX IF NOT EXISTS workflow_runs_tenant ON workflow_runs (tenant_id, created_at);
+CREATE INDEX IF NOT EXISTS workflow_runs_reminder ON workflow_runs (reminder_due, reminder_sent);
 
 -- ---------- demo seed ----------
 `;

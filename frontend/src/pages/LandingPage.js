@@ -8,6 +8,7 @@ import IndustriesSection from "@/components/IndustriesSection";
 import AiDemoWidget from "@/components/AiDemoWidget";
 import VoiceDemo from "@/components/VoiceDemo";
 import LocalAudit from "@/components/LocalAudit";
+import WorkflowDemo from "@/components/WorkflowDemo";
 import ProcessSection from "@/components/ProcessSection";
 import FaqSection from "@/components/FaqSection";
 import ContactFormSection from "@/components/ContactFormSection";
@@ -40,6 +41,7 @@ export default function LandingPage() {
       <AiDemoWidget />
       <VoiceDemo />
       <LocalAudit />
+      <WorkflowDemo />
       <ProcessSection />
       <FaqSection />
       <ContactFormSection />

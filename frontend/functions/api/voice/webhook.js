@@ -4,11 +4,11 @@
 
 import { verifyRetell } from "../../_lib/retell.js";
 import { insertLead, saveConversation, loadConversation, now } from "../../_lib/db.js";
-import { notify } from "../../_lib/notify.js";
+import { runWorkflow } from "../../_lib/workflow.js";
 import { json } from "../../_lib/http.js";
 import { tenantForCall } from "./tool.js";
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, waitUntil }) {
   const raw = await request.text();
   if (!(await verifyRetell(env, raw, request.headers.get("x-retell-signature")))) return json({ detail: "Unauthorized" }, 401);
   let body; try { body = JSON.parse(raw); } catch { return json({ ok: true }); }
@@ -39,18 +39,19 @@ export async function onRequestPost({ request, env }) {
     const custom = analysis.custom_analysis_data || {};
     const needsFollowup = custom.needs_followup === true || analysis.call_successful === false;
     const mins = call.start_timestamp && call.end_timestamp ? Math.round((call.end_timestamp - call.start_timestamp) / 60000) : null;
+    let rec = null;
     if (needsFollowup) {
-      await insertLead(env, {
+      rec = await insertLead(env, {
         tenant_id: tenant.id, conversation_id: call.call_id, source: "voice",
         name: custom.caller_name || null, phone: custom.callback_phone || call.from_number || null,
         summary: analysis.call_summary || "Call needs follow-up",
       });
     }
-    await notify(env, tenant, `${needsFollowup ? "Follow-up needed: " : ""}Call from ${call.from_number || "web"}`, [
-      ["Caller", custom.caller_name || "-"], ["Number", custom.callback_phone || call.from_number || "-"],
-      ["Length", mins != null ? `${mins} min` : "-"], ["Outcome", analysis.call_successful === false ? "unresolved" : "handled"],
-      ["Sentiment", analysis.user_sentiment || "-"],
-    ], analysis.call_summary || "");
+    const job = runWorkflow(env, tenant, call.call_id, {
+      kind: "call", rec, summary: analysis.call_summary || "", from: call.from_number || null, needsFollowup, mins,
+      sentiment: analysis.user_sentiment || null, callerName: custom.caller_name || null, callbackPhone: custom.callback_phone || null,
+    }).catch((e) => console.error("call workflow", e?.message || e));
+    if (typeof waitUntil === "function") waitUntil(job); else await job;
   }
   return json({ ok: true });
 }

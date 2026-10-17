@@ -47,12 +47,18 @@ export default function AgentChat({ tenant, compact = false, api = "/api", onMes
       onEvent: (evt) => {
         switch (evt.type) {
           case "meta":
-            if (evt.conversation_id) setConversationId(evt.conversation_id);
+            if (evt.conversation_id) {
+              setConversationId(evt.conversation_id);
+              try { window.dispatchEvent(new CustomEvent("mesa:conversation", { detail: { id: evt.conversation_id, tenant: tenant.id } })); } catch {}
+            }
             break;
           case "delta":
             setMessages((m) => appendToLastAssistant(m, evt.text));
             break;
           case "tool":
+            if (["book_appointment", "capture_lead", "escalate_to_human"].includes(evt.name)) {
+              try { window.dispatchEvent(new CustomEvent("mesa:workflow", { detail: { tool: evt.name, summary: evt.summary } })); } catch {}
+            }
             setMessages((m) => {
               // Insert the chip before the trailing (still streaming) assistant bubble.
               const arr = [...m];
