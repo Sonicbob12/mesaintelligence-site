@@ -20,9 +20,15 @@ const ddl = `CREATE TABLE IF NOT EXISTS tenants (
   notify_email TEXT,
   sms_number TEXT,
   demo INTEGER NOT NULL DEFAULT 0,
-  active INTEGER NOT NULL DEFAULT 1
+  active INTEGER NOT NULL DEFAULT 1,
+  voice_number TEXT,
+  transfer_number TEXT,
+  voice_id TEXT,
+  retell_agent_id TEXT,
+  retell_llm_id TEXT
 );
 CREATE INDEX IF NOT EXISTS tenants_sms ON tenants (sms_number);
+CREATE INDEX IF NOT EXISTS tenants_voice ON tenants (voice_number);
 
 CREATE TABLE IF NOT EXISTS knowledge (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,7 +51,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   messages_json TEXT NOT NULL DEFAULT '[]',
   turns INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  summary TEXT
 );
 CREATE INDEX IF NOT EXISTS conversations_ext ON conversations (tenant_id, channel, external_id);
 CREATE INDEX IF NOT EXISTS conversations_updated ON conversations (updated_at);
@@ -93,7 +100,10 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 let out = ddl;
 for (const t of Object.values(DEMO_TENANTS)) {
   const row = tenantToRow(t);
-  out += `INSERT OR REPLACE INTO tenants (id, name, vertical, timezone, greeting, presets_json, persona, hours_json, slot_minutes, services_json, escalation, notify_email, sms_number, demo, active)\nVALUES (${row.map(q).join(", ")});\n`;
+  const cols = ["id","name","vertical","timezone","greeting","presets_json","persona","hours_json","slot_minutes","services_json","escalation","notify_email","sms_number","demo","active"];
+  const vals = row.slice(0, cols.length).map(q);
+  // Upsert that leaves voice/Retell columns alone so re-seeding never disconnects a phone number.
+  out += `INSERT INTO tenants (${cols.join(", ")})\nVALUES (${vals.join(", ")})\nON CONFLICT(id) DO UPDATE SET ${cols.slice(1).map((c) => `${c}=excluded.${c}`).join(", ")};\n`;
 }
 out += `\nDELETE FROM knowledge WHERE tenant_id IN (${Object.keys(DEMO_KNOWLEDGE).map(q).join(", ")});\n`;
 for (const [tid, docs] of Object.entries(DEMO_KNOWLEDGE)) {

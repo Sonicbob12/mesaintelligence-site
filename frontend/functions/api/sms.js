@@ -33,6 +33,7 @@ export async function onRequestPost({ request, env }) {
   let text = "";
   for await (const evt of agentTurn({ env, tenant, conversation, message: body, channel: "sms", ip: clientIp(request) })) {
     if (evt.type === "delta") text += evt.text;
+    else if (evt.type === "tool") { if (text && !/\s$/.test(text)) text += " "; }
     else if (evt.type === "notice") text += evt.text;
     else if (evt.type === "error") text = text || "Sorry — something went wrong on our side. Please call us directly.";
   }

@@ -20,6 +20,7 @@ export async function onRequestGet({ env }) {
     resend: Boolean(env.RESEND_API_KEY),
     lead_to: env.LEAD_TO || null,
     twilio: Boolean(env.TWILIO_AUTH_TOKEN),
+    retell: Boolean(env.RETELL_API_KEY),
     admin: Boolean(env.ADMIN_TOKEN),
     db,
     storage: hasDB(env) ? "d1" : "memory (sessions reset; bind D1 as DB to persist)",

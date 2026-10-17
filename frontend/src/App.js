@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 import LandingPage from "@/pages/LandingPage";
 import EmbedPage from "@/pages/EmbedPage";
+import AdminPage from "@/pages/AdminPage";
 
 function App() {
   return (
@@ -11,6 +12,7 @@ function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/embed" element={<EmbedPage />} />
+          <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </BrowserRouter>
       <Toaster theme="dark" position="bottom-right" toastOptions={{

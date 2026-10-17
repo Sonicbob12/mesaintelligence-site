@@ -36,11 +36,11 @@ export async function saveConversation(env, conv) {
   const rec = { ...conv, updated_at: now(), created_at: conv.created_at || now() };
   if (!hasDB(env)) { mem.conversations.set(rec.id, rec); return rec; }
   await env.DB.prepare(
-    `INSERT INTO conversations (id, tenant_id, channel, external_id, messages_json, turns, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-     ON CONFLICT(id) DO UPDATE SET messages_json = ?5, turns = ?6, updated_at = ?8`
+    `INSERT INTO conversations (id, tenant_id, channel, external_id, messages_json, turns, created_at, updated_at, summary)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+     ON CONFLICT(id) DO UPDATE SET messages_json = ?5, turns = ?6, updated_at = ?8, summary = COALESCE(?9, summary)`
   ).bind(rec.id, rec.tenant_id, rec.channel, rec.external_id || null,
-         JSON.stringify(rec.messages), rec.turns || 0, rec.created_at, rec.updated_at).run();
+         JSON.stringify(rec.messages), rec.turns || 0, rec.created_at, rec.updated_at, rec.summary || null).run();
   return rec;
 }
 
@@ -134,7 +134,7 @@ export async function recentActivity(env, tenantId, limit = 50) {
     q(`SELECT * FROM bookings ${where} ORDER BY created_at DESC LIMIT ?`),
     q(`SELECT * FROM leads ${where} ORDER BY created_at DESC LIMIT ?`),
     q(`SELECT * FROM handoffs ${where} ORDER BY created_at DESC LIMIT ?`),
-    q(`SELECT id, tenant_id, channel, external_id, turns, created_at, updated_at FROM conversations ${where} ORDER BY updated_at DESC LIMIT ?`),
+    q(`SELECT id, tenant_id, channel, external_id, turns, summary, created_at, updated_at FROM conversations ${where} ORDER BY updated_at DESC LIMIT ?`),
   ]);
   return { bookings, leads, handoffs, conversations };
 }
