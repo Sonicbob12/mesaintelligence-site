@@ -1,6 +1,6 @@
-// POST /api/audit/run { place_id, query } → the audit (scores, checks, competitors).
+// POST /api/audit/run { place_id, query } → the free audit (scores, checks, competitors, first rank).
 // The AI fix-it plan is generated in the background and revealed by /api/audit/report.
-import { runAudit, derived, saveAudit, actionPlan, savePlan } from "../../_lib/audit.js";
+import { runAudit, derived, cacheable, saveAudit, actionPlan, savePlan, proMode, proPrice } from "../../_lib/audit.js";
 import { hit } from "../../_lib/db.js";
 import { clientIp, json, readJSON } from "../../_lib/http.js";
 
@@ -22,8 +22,9 @@ export async function onRequestPost({ request, env, waitUntil }) {
     return json({ detail: e.status === 400 || e.status === 404 ? "We couldn't load that listing." : "The audit failed — please try again in a minute." }, e.status === 400 || e.status === 404 ? 400 : 502);
   }
   const data = derived(audit);
-  const rec = await saveAudit(env, { place_id: placeId, query: String(b?.query || "").slice(0, 120), source: "public", score: audit.score, grade: audit.grade, data, ip });
+  const rec = await saveAudit(env, { place_id: placeId, query: String(b?.query || "").slice(0, 120), source: "public", score: audit.score, grade: audit.grade, data, ip, full: cacheable(audit) });
   const job = actionPlan(env, data.facts).then((plan) => savePlan(env, rec.id, plan)).catch((e) => console.error("plan bg", e?.message || e));
   if (typeof waitUntil === "function") waitUntil(job);
-  return json({ audit_id: rec.id, ...audit });
+  const { _reviews, _location, ...pub } = audit;
+  return json({ audit_id: rec.id, share_key: rec.share_key, pro_mode: proMode(env), pro_price: proPrice(env), ...pub });
 }

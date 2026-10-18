@@ -2,6 +2,7 @@
 
 import { hasDB } from "../_lib/db.js";
 import { json } from "../_lib/http.js";
+import { proMode, proPrice } from "../_lib/audit.js";
 
 export async function onRequestGet({ env }) {
   let db = "not bound";
@@ -24,6 +25,11 @@ export async function onRequestGet({ env }) {
     cron: Boolean(env.CRON_TOKEN),
     retell: Boolean(env.RETELL_API_KEY),
     places: Boolean(env.GOOGLE_PLACES_API_KEY),
+    audit_pro_mode: proMode(env),
+    audit_pro_price: proPrice(env),
+    stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_ID),
+    stripe_webhook: Boolean(env.STRIPE_WEBHOOK_SECRET),
+    pagespeed_key: Boolean(env.PSI_API_KEY),
     admin: Boolean(env.ADMIN_TOKEN),
     db,
     storage: hasDB(env) ? "d1" : "memory (sessions reset; bind D1 as DB to persist)",

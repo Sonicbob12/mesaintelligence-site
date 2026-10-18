@@ -53,7 +53,8 @@ export async function placeDetails(env, placeId) {
   const p = await places(env, "GET", `/v1/places/${encodeURIComponent(placeId)}`, null, DETAIL_FIELDS);
   const city = (p.addressComponents || []).find((c) => (c.types || []).includes("locality"))?.longText || "";
   // Google sometimes leaves photos/reviews out entirely; null = unknown (not scored), [] = none.
-  const reviews = Array.isArray(p.reviews) ? p.reviews.map((r) => ({ rating: r.rating, at: r.publishTime ? Date.parse(r.publishTime) : null })) : null;
+  // Review text is used only transiently (themes are derived by the model); it is never stored.
+  const reviews = Array.isArray(p.reviews) ? p.reviews.map((r) => ({ rating: r.rating, at: r.publishTime ? Date.parse(r.publishTime) : null, text: String(r.text?.text || r.originalText?.text || "").slice(0, 600) })) : null;
   return {
     id: p.id,
     name: p.displayName?.text || "",
@@ -78,17 +79,25 @@ export async function placeDetails(env, placeId) {
 }
 
 // Step 3: who they're up against — same category, near the same spot.
+// The same search doubles as the first visibility check ("{trade} in {city}"): the business's position
+// in the full 20-result list is its rank. Returns { comps, rank }.
 export async function nearbyCompetitors(env, place, max = 5) {
-  if (!place.location) return [];
+  if (!place.location) return { comps: [], rank: null };
   const what = competitorCategory(place);
+  const label = `${what.toLowerCase()}${place.city ? ` in ${place.city}` : ""}`;
   const data = await places(env, "POST", "/v1/places:searchText", {
-    textQuery: `${what}${place.city ? ` in ${place.city}` : ""}`,
-    pageSize: Math.min(20, max + 4),
+    textQuery: label,
+    pageSize: 20,
     regionCode: "us",
     languageCode: "en",
     locationBias: { circle: { center: place.location, radius: 15000 } },
   }, "places.id,places.displayName,places.rating,places.userRatingCount,places.websiteUri,places.regularOpeningHours,places.photos,places.googleMapsUri,places.businessStatus");
-  return (data.places || [])
+  const list = data.places || [];
+  const idx = list.findIndex((p) => p.id === place.id);
+  const top = list[0];
+  const rank = { id: "trade_city", label, position: idx >= 0 ? idx + 1 : null, results: list.length,
+    leader: top && top.id !== place.id ? { name: top.displayName?.text || "", rating: typeof top.rating === "number" ? top.rating : null, reviewCount: top.userRatingCount || 0 } : null };
+  const comps = list
     .filter((p) => p.id !== place.id && (!p.businessStatus || p.businessStatus === "OPERATIONAL"))
     .slice(0, max)
     .map((p) => ({
@@ -101,6 +110,7 @@ export async function nearbyCompetitors(env, place, max = 5) {
       photoCount: Array.isArray(p.photos) ? p.photos.length : null,
       mapsUri: p.googleMapsUri || "",
     }));
+  return { comps, rank };
 }
 
 // Google files many trades under broad types (an HVAC company is "General contractor"), which would
@@ -126,6 +136,58 @@ export function competitorCategory(place) {
   if (place.primaryType && !BROAD.has(place.primaryType)) return place.typeLabel || place.primaryType.replace(/_/g, " ");
   for (const [re, label] of TRADES) if (re.test(place.name)) return label;
   return place.typeLabel || "business";
+}
+
+// Step 4: search visibility — where does the business land for the searches people actually type?
+// Each query is one Text Search (~$0.032); results are biased to the business's own location the
+// way a phone search would be. Returns the 1-based position or null when it isn't in the top 20.
+export function visibilityQueries(place) {
+  const what = competitorCategory(place).toLowerCase();
+  const city = place.city || "";
+  const qs = [];
+  if (city) qs.push({ id: "trade_city", label: `${what} in ${city}`, textQuery: `${what} in ${city}` });
+  qs.push({ id: "near_me", label: `${what} near me`, textQuery: `${what} near me` });
+  if (city) qs.push({ id: "best", label: `best ${what} ${city}`, textQuery: `best ${what} ${city}` });
+  return qs.slice(0, 3);
+}
+
+export async function searchRank(env, place, q) {
+  const data = await places(env, "POST", "/v1/places:searchText", {
+    textQuery: q.textQuery, pageSize: 20, regionCode: "us", languageCode: "en",
+    ...(place.location ? { locationBias: { circle: { center: place.location, radius: 8000 } } } : {}),
+  }, "places.id,places.displayName,places.rating,places.userRatingCount");
+  const list = data.places || [];
+  const idx = list.findIndex((p) => p.id === place.id);
+  const top = list[0];
+  return {
+    id: q.id, label: q.label,
+    position: idx >= 0 ? idx + 1 : null,
+    results: list.length,
+    leader: top && top.id !== place.id ? { name: top.displayName?.text || "", rating: typeof top.rating === "number" ? top.rating : null, reviewCount: top.userRatingCount || 0 } : null,
+  };
+}
+
+// Step 5: duplicate or conflicting listings — same name (or same phone) showing up more than once
+// in the same city confuses Google and splits reviews between profiles.
+export async function findDuplicates(env, place) {
+  const q = `${place.name}${place.city ? ` ${place.city}` : ""}`;
+  const data = await places(env, "POST", "/v1/places:searchText", {
+    textQuery: q, pageSize: 10, regionCode: "us", languageCode: "en",
+    ...(place.location ? { locationBias: { circle: { center: place.location, radius: 30000 } } } : {}),
+  }, "places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.businessStatus,places.userRatingCount");
+  const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const digits = (s) => String(s || "").replace(/\D/g, "").slice(-10);
+  const me = norm(place.name), myPhone = digits(place.phone);
+  return (data.places || [])
+    .filter((p) => p.id !== place.id)
+    .filter((p) => {
+      const n = norm(p.displayName?.text);
+      const samePhone = myPhone && digits(p.nationalPhoneNumber) === myPhone;
+      const sameName = n && me && (n === me || n.includes(me) || me.includes(n));
+      return samePhone || sameName;
+    })
+    .slice(0, 5)
+    .map((p) => ({ id: p.id, name: p.displayName?.text || "", address: p.formattedAddress || "", closed: p.businessStatus && p.businessStatus !== "OPERATIONAL", reviewCount: p.userRatingCount || 0, samePhone: Boolean(myPhone && digits(p.nationalPhoneNumber) === myPhone) }));
 }
 
 // Admin diagnostics: which fields Google actually returned for a place.

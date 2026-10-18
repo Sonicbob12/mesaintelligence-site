@@ -49,7 +49,8 @@ export default function AdminAudit({ call, enabled }) {
           ))}
         </div>
       )}
-      {busy === "run" && <div className="text-sm text-[#9E9AA3] flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Running full audit + plan…</div>}
+      {busy === "run" && <div className="text-sm text-[#9E9AA3] flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Running Pro audit + plan (15–25 s)…</div>}
+      {busy === "unlock" && <div className="text-sm text-[#9E9AA3] flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Unlocking Pro + emailing the report…</div>}
       {err && <div className="text-sm text-[#D96B43]">{err}</div>}
 
       {result && (
@@ -60,15 +61,28 @@ export default function AdminAudit({ call, enabled }) {
               <span className="text-[#9E9AA3]">{result.place.address}</span>
               {result.place.phone && <span>{result.place.phone}</span>}
               {result.place.mapsUri && <a className="text-[#E5A93C]" href={result.place.mapsUri} target="_blank" rel="noreferrer">Maps ↗</a>}
+              {result.link && <a className="text-[#E5A93C]" href={result.link} target="_blank" rel="noreferrer">Report page ↗</a>}
             </div>
           ) : (
-            <div className="text-[#9E9AA3]">Stored audit {result.id} · {result.query || ""} · {result.contact_name || "no contact"} {result.contact_email || ""}</div>
+            <div className="text-[#9E9AA3] flex flex-wrap gap-x-4 gap-y-1 items-baseline">
+              <span>Stored audit {result.id} · {result.query || ""} · {result.contact_name || "no contact"} {result.contact_email || ""} {result.pro ? "· PRO" : ""}</span>
+              {result.link && <a className="text-[#E5A93C]" href={result.link} target="_blank" rel="noreferrer">Report page ↗</a>}
+              {!result.pro && <button onClick={() => go({ audit_id: result.id, unlock: true }, "unlock")} className="text-[#E5A93C] hover:underline" disabled={busy === "unlock"}>Unlock Pro + email report</button>}
+            </div>
           )}
           <div className="flex gap-8">
             <div><div className="text-4xl font-light">{result.score ?? result.data?.score}</div><div className="text-[#9E9AA3] text-xs">overall · {result.grade ?? result.data?.grade}</div></div>
             <div><div className="text-2xl font-light">{result.listingScore ?? result.data?.listingScore}</div><div className="text-[#9E9AA3] text-xs">listing</div></div>
             <div><div className="text-2xl font-light">{(result.hasWebsite ?? result.data?.hasWebsite) ? (result.websiteScore ?? result.data?.websiteScore) : "—"}</div><div className="text-[#9E9AA3] text-xs">website</div></div>
+            {(result.visibility?.score ?? result.data?.visibilityScore) != null && <div><div className="text-2xl font-light">{result.visibility?.score ?? result.data?.visibilityScore}</div><div className="text-[#9E9AA3] text-xs">visibility</div></div>}
           </div>
+          {(result.visibility?.queries || result.data?.ranks) && (
+            <div className="text-[#9E9AA3]">{(result.visibility?.queries || result.data?.ranks).map((r) => <span key={r.id} className="mr-4">{r.position ? `#${r.position}` : "n/a"} <span className="text-[#F5F3EF]">{r.label}</span></span>)}</div>
+          )}
+          {result.pro?.duplicates?.length > 0 && <div className="text-[#D96B43]">{result.pro.duplicates.length} duplicate listing(s): {result.pro.duplicates.map((d) => d.address).join("; ")}</div>}
+          {result.pro?.teardown?.theyHaveYouDont?.length > 0 && <div className="text-[#9E9AA3]">#1 ({result.pro.teardown.name}) has, prospect doesn't: <span className="text-[#F5F3EF]">{result.pro.teardown.theyHaveYouDont.join(", ")}</span></div>}
+          {result.pro?.themes && <div className="text-[#9E9AA3]">Reviews — praise: <span className="text-[#F5F3EF]">{(result.pro.themes.praise || []).join("; ") || "—"}</span> · complaints: <span className="text-[#F5F3EF]">{(result.pro.themes.complaints || []).join("; ") || "—"}</span></div>}
+          {result.history?.length > 1 && <div className="text-[#9E9AA3]">History: {result.history.map((h) => h.score).join(" → ")}</div>}
           {result.competitors?.rows && (
             <table className="w-full max-w-2xl">
               <thead><tr className="text-left text-[#9E9AA3] font-mono text-[10px] uppercase tracking-[0.15em]"><th className="font-normal pb-1">Business</th><th className="font-normal">Rating</th><th className="font-normal">Reviews</th><th className="font-normal">Photos</th><th className="font-normal">Site</th></tr></thead>
@@ -103,14 +117,15 @@ export default function AdminAudit({ call, enabled }) {
         {list.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-[#9E9AA3] font-mono text-[10px] uppercase tracking-[0.15em]"><th className="font-normal pb-2 pr-4">When</th><th className="font-normal pr-4">Searched / business</th><th className="font-normal pr-4">Score</th><th className="font-normal pr-4">Contact</th><th className="font-normal">Via</th></tr></thead>
+              <thead><tr className="text-left text-[#9E9AA3] font-mono text-[10px] uppercase tracking-[0.15em]"><th className="font-normal pb-2 pr-4">When</th><th className="font-normal pr-4">Searched / business</th><th className="font-normal pr-4">Score</th><th className="font-normal pr-4">Contact</th><th className="font-normal pr-4">Via</th><th className="font-normal">Pro</th></tr></thead>
               <tbody>{list.map((a) => (
                 <tr key={a.id} onClick={() => go({ audit_id: a.id }, "open")} className="border-t border-white/8 cursor-pointer hover:bg-white/[0.03]">
                   <td className="py-2 pr-4 whitespace-nowrap">{fmt(a.created_at)}</td>
                   <td className="py-2 pr-4 max-w-[240px] truncate">{a.business_name || a.query || "-"}</td>
                   <td className="py-2 pr-4">{a.score} {a.grade}</td>
                   <td className="py-2 pr-4 max-w-[260px] truncate">{a.contact_email ? `${a.contact_name} · ${a.contact_email}${a.contact_phone ? ` · ${a.contact_phone}` : ""}` : <span className="text-[#9E9AA3]">—</span>}</td>
-                  <td className="py-2">{a.source}</td>
+                  <td className="py-2 pr-4">{a.source}</td>
+                  <td className="py-2">{a.pro ? <span className="text-[#E5A93C]">PRO</span> : <span className="text-[#9E9AA3]">—</span>}</td>
                 </tr>
               ))}</tbody>
             </table>

@@ -1,13 +1,26 @@
-// Local Discovery audit: score a business's Google listing + website against nearby competitors,
-// then (for the full report) have Claude turn the findings into a prioritized fix-it plan.
+// Local Discovery audit: score a business's Google listing, search visibility and website against
+// nearby competitors, then (for the full report) have Claude turn the findings into a fix-it plan.
+//
+// Two depths:
+//   runAudit()      free teaser — listing + website + "{trade} in {city}" rank (1 Google search, shared
+//                   with the competitor table), ~9¢ of Google.
+//   runProExtras()  the Pro report — 2 more search-rank queries, duplicate-listing check, website
+//                   teardown of the #1 competitor, review themes (model), and PageSpeed in the background.
+// Pricing is a switch, not code: AUDIT_PRO_MODE = "free" (founding period: an email unlocks Pro)
+// or "paid" (Stripe Checkout unlocks Pro). Anything else = Pro off.
 
-import { placeDetails, nearbyCompetitors, competitorCategory } from "./places.js";
+import { placeDetails, nearbyCompetitors, competitorCategory, visibilityQueries, searchRank, findDuplicates } from "./places.js";
 import { checkWebsite } from "./website.js";
+import { pageSpeed, pageSpeedChecks } from "./pagespeed.js";
 import { runModelCollect } from "./anthropic.js";
 import { hasDB, id, now, safeJSON } from "./db.js";
 
 const GENERIC_TYPES = new Set(["establishment", "point_of_interest", "store", "service", "business", "premise"]);
 const DAY = 86400000;
+const CACHE_DAYS = 30; // Google allows caching Places content up to 30 days; after that we re-fetch.
+
+export const proMode = (env) => (env.AUDIT_PRO_MODE === "paid" && env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_ID ? "paid" : env.AUDIT_PRO_MODE === "free" || env.AUDIT_PRO_MODE === "paid" ? "free" : "off");
+export const proPrice = (env) => Number(env.AUDIT_PRO_PRICE_USD || 99);
 
 const median = (xs) => {
   const s = xs.filter((x) => typeof x === "number").sort((a, b) => a - b);
@@ -16,6 +29,7 @@ const median = (xs) => {
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
 };
 export const grade = (n) => (n >= 85 ? "A" : n >= 70 ? "B" : n >= 55 ? "C" : n >= 40 ? "D" : "F");
+const posScore = (p) => (p == null ? 0 : p <= 3 ? 100 : p <= 6 ? 75 : p <= 10 ? 50 : 25);
 
 function listingChecks(p, comps) {
   const checks = [];
@@ -62,6 +76,9 @@ function listingChecks(p, comps) {
     add("review_recency", "Recent reviews", age <= 30 ? true : age <= 90 ? "warn" : false, recPts, 10,
       newest ? `Newest review Google surfaced is ${Math.round(age)} days old` : "No dated reviews",
       "Keep a steady trickle of new reviews — Google and customers both weigh recency.");
+    const low = p.reviews.filter((x) => typeof x.rating === "number" && x.rating <= 2).length;
+    if (low) add("negative_reviews", "Negative reviews showing", low >= 2 ? false : "warn", 0, 0, `${low} of the ${p.reviews.length} reviews Google surfaces first ${low === 1 ? "is" : "are"} 1–2 stars`,
+      "Reply to each one publicly (calm, specific, offer to make it right) — a thoughtful owner reply is read by every future customer.");
   }
 
   const ph = p.photoCount;
@@ -96,25 +113,55 @@ function competitorSummary(p, comps) {
   };
 }
 
-// Runs the whole audit live. Returns everything needed for display; nothing is persisted here.
+// Visibility: how the business ranks for the searches customers actually type.
+function visibilityBlock(ranks) {
+  const rs = ranks.filter(Boolean);
+  if (!rs.length) return null;
+  const score = Math.round(rs.reduce((a, r) => a + posScore(r.position), 0) / rs.length);
+  const primary = rs[0];
+  const checks = rs.map((r) => ({
+    id: `rank_${r.id}`, label: `Rank for "${r.label}"`,
+    status: r.position != null && r.position <= 3 ? "pass" : r.position != null && r.position <= 10 ? "warn" : "fail",
+    points: posScore(r.position), max: 100,
+    detail: r.position ? `#${r.position} of ${r.results}${r.leader ? ` · #1 is ${r.leader.name} (${r.leader.reviewCount} reviews)` : ""}` : `Not in the top ${r.results || 20}`,
+    fix: r.position != null && r.position <= 3 ? "Hold the spot: keep reviews and photos coming monthly." : "Close the gap with the #1: more reviews than them, the exact category, a service page that names this search, and consistent name/address/phone everywhere.",
+  }));
+  return { score, grade: grade(score), queries: rs, checks, primary };
+}
+
+function overall({ listingScore, websiteScore, visibility }) {
+  return visibility ? Math.round(listingScore * 0.5 + websiteScore * 0.3 + visibility.score * 0.2) : Math.round(listingScore * 0.65 + websiteScore * 0.35);
+}
+
+function rankIssues(listing, siteChecks, vis, hasWebsite) {
+  const issues = [
+    ...listing.map((c) => ({ ...c, area: "listing" })),
+    ...(siteChecks || []).map((c) => ({ ...c, area: "website" })),
+    ...(vis?.checks || []).map((c) => ({ ...c, area: "visibility", max: 20, points: Math.round(c.points / 5) })),
+  ]
+    .filter((c) => c.status !== "pass")
+    .map((c) => ({ ...c, weight: (c.max - c.points) * (c.area === "listing" ? 0.5 : c.area === "visibility" ? 1 : 0.3) + (c.id === "status" ? 100 : 0) + (c.id === "site_loads" ? 30 : 0) + (c.id === "negative_reviews" ? 6 : 0) }))
+    .sort((a, b) => b.weight - a.weight);
+  if (!hasWebsite) issues.unshift({ id: "no_website", area: "website", label: "No website", status: "fail", points: 0, max: 100, detail: "There's no website on the listing to check", fix: "Get a simple, fast, mobile site with your phone, hours, service area and a booking button — and link it from Google.", weight: 40 });
+  return issues.map(({ weight, ...c }) => c);
+}
+
+// Runs the free audit live. Returns everything needed for display; nothing is persisted here.
 export async function runAudit(env, placeId) {
   const place = await placeDetails(env, placeId);
-  const [comps, site] = await Promise.all([
-    nearbyCompetitors(env, place).catch((e) => { console.error("competitors", e?.message || e); return []; }),
-    place.website ? checkWebsite(place.website, place.phone, { allowLocal: env.AUDIT_ALLOW_LOCAL_SITES === "1" }).catch(() => ({ ok: false, checks: [], score: 0, error: "Could not be checked" })) : Promise.resolve(null),
+  const [compRes, site] = await Promise.all([
+    nearbyCompetitors(env, place, 5).catch((e) => { console.error("competitors", e?.message || e); return { comps: [], rank: null }; }),
+    place.website ? checkWebsite(place.website, place.phone, { allowLocal: env.AUDIT_ALLOW_LOCAL_SITES === "1", address: place.address }).catch(() => ({ ok: false, checks: [], score: 0, error: "Could not be checked" })) : Promise.resolve(null),
   ]);
+  const comps = compRes.comps;
   const { checks } = listingChecks(place, comps);
   const lGot = checks.reduce((a, c) => a + c.points, 0), lMax = checks.reduce((a, c) => a + c.max, 0);
   const listingScore = Math.round((lGot / lMax) * 100);
   const websiteScore = site ? site.score : 0;
-  const score = Math.round(listingScore * 0.65 + websiteScore * 0.35);
+  const visibility = visibilityBlock([compRes.rank]);
+  const score = overall({ listingScore, websiteScore, visibility });
   const competitors = competitorSummary(place, comps);
-
-  const issues = [...checks.map((c) => ({ ...c, area: "listing" })), ...(site?.checks || []).map((c) => ({ ...c, area: "website" }))]
-    .filter((c) => c.status !== "pass")
-    .map((c) => ({ ...c, weight: (c.max - c.points) * (c.area === "listing" ? 0.65 : 0.35) + (c.id === "status" ? 100 : 0) + (c.id === "site_loads" ? 30 : 0) }))
-    .sort((a, b) => b.weight - a.weight);
-  if (!place.website) issues.unshift({ id: "no_website", area: "website", label: "No website", status: "fail", points: 0, max: 100, detail: "There's no website on the listing to check", fix: "Get a simple, fast, mobile site with your phone, hours, service area and a booking button — and link it from Google.", weight: 40 });
+  const issues = rankIssues(checks, site?.checks, visibility, Boolean(place.website));
 
   return {
     place: {
@@ -123,21 +170,108 @@ export async function runAudit(env, placeId) {
       phone: place.phone, website: place.website, hours: place.hours, status: place.status,
     },
     score, grade: grade(score), listingScore, websiteScore, hasWebsite: Boolean(place.website),
+    visibility,
     listing: checks,
-    website: site ? { ok: site.ok, url: site.finalUrl || site.url, ms: site.ms, error: site.error || null, checks: site.checks } : null,
+    website: site ? { ok: site.ok, url: site.finalUrl || site.url, ms: site.ms, error: site.error || null, checks: site.checks, extras: site.extras || null } : null,
     competitors,
-    issues: issues.map(({ weight, ...c }) => c),
+    issues,
+    pro: null,
+    _reviews: place.reviews || null, // transient: used for review themes, never stored
+    _location: place.location || null,
   };
 }
 
-// The parts we keep (our own derived findings — no Google content beyond the place id).
+// ---------------- Pro extras ----------------
+// Runs the rest of the Google/website work and merges it into the audit. ~10 s wall time.
+export async function runProExtras(env, audit) {
+  const place = { id: audit.place.id, name: audit.place.name, city: audit.place.city, phone: audit.place.phone, location: audit._location, primaryType: "", typeLabel: audit.place.typeLabel, website: audit.place.website };
+  const fakePlaceForCat = { ...place, primaryType: "x", typeLabel: audit.place.category };
+  const qs = visibilityQueries(fakePlaceForCat).filter((q) => q.id !== "trade_city"); // trade_city came with the free run
+  const leader = audit.competitors.leader;
+  const leaderDetails = leader ? placeDetails(env, leader.id).catch(() => null) : Promise.resolve(null);
+
+  const [ranks, dups, leaderPlace, themes] = await Promise.all([
+    Promise.all(qs.map((q) => searchRank(env, place, q).catch((e) => { console.error("rank", q.id, e?.message || e); return null; }))),
+    findDuplicates(env, place).catch((e) => { console.error("duplicates", e?.message || e); return []; }),
+    leaderDetails,
+    reviewThemes(env, audit).catch(() => null),
+  ]);
+  const leaderSite = leaderPlace?.website ? await checkWebsite(leaderPlace.website, leaderPlace.phone, { allowLocal: env.AUDIT_ALLOW_LOCAL_SITES === "1", address: leaderPlace.address }).catch(() => null) : null;
+
+  const allRanks = [...(audit.visibility?.queries || []), ...ranks.filter(Boolean)];
+  const visibility = visibilityBlock(allRanks);
+  const teardown = leaderPlace ? {
+    name: leaderPlace.name, rating: leaderPlace.rating, reviewCount: leaderPlace.reviewCount, photoCount: leaderPlace.photoCount, hasHours: leaderPlace.hasHours, website: leaderPlace.website || null,
+    websiteScore: leaderSite ? leaderSite.score : null,
+    // What they pass that you fail — the "here's what #1 does that you don't" list.
+    theyHaveYouDont: leaderSite ? leaderSite.checks.filter((c) => c.status === "pass" && (audit.website?.checks || []).some((m) => m.id === c.id && m.status !== "pass")).map((c) => c.label) : [],
+    youHaveTheyDont: leaderSite ? (audit.website?.checks || []).filter((c) => c.status === "pass" && leaderSite.checks.some((m) => m.id === c.id && m.status !== "pass")).map((c) => c.label) : [],
+    tools: leaderSite?.extras?.tools || [], pages: leaderSite?.extras?.depth?.pages ?? null,
+  } : null;
+
+  const dupChecks = dups.length ? [{ id: "duplicates", label: "Duplicate or conflicting listings", status: dups.some((d) => d.samePhone) ? "fail" : "warn", points: 0, max: 0, area: "listing",
+    detail: `${dups.length} other listing${dups.length === 1 ? "" : "s"} with your name${dups.some((d) => d.samePhone) ? " or phone number" : ""} nearby (${dups.slice(0, 2).map((d) => d.address.split(",")[0]).join("; ")})`,
+    fix: "Claim and merge or close duplicates in Google Business Profile so reviews and ranking signals land on one profile." }] : [];
+
+  const score = overall({ listingScore: audit.listingScore, websiteScore: audit.websiteScore, visibility });
+  const pro = { visibility, duplicates: dups, teardown, themes, ranAt: Date.now(), pagespeed: audit.pro?.pagespeed || null };
+  const issues = rankIssues([...audit.listing, ...dupChecks], audit.website?.checks, visibility, audit.hasWebsite);
+  return { ...audit, score, grade: grade(score), visibility, issues, pro };
+}
+
+// What customers keep saying — derived from the handful of reviews Google surfaces. Text is not stored.
+async function reviewThemes(env, audit) {
+  const rs = (audit._reviews || []).filter((r) => r.text && r.text.length > 20);
+  if (!env.ANTHROPIC_API_KEY || rs.length < 2) return null;
+  const system = "You summarize customer reviews for a local business owner. Respond with JSON only: {\"praise\": [\"up to 3 short phrases customers praise\"], \"complaints\": [\"up to 3 short phrases customers complain about\"], \"quote\": \"one short, positive customer phrase worth putting on the website (paraphrase, max 12 words)\"}. Use only what the reviews say. Empty arrays are fine.";
+  const { text } = await runModelCollect({ env, system, messages: [{ role: "user", content: rs.map((r, i) => `Review ${i + 1} (${r.rating}★): ${r.text}`).join("\n\n") }], maxTokens: 400 });
+  const m = /\{[\s\S]*\}/.exec(text);
+  const j = m ? JSON.parse(m[0]) : null;
+  if (!j) return null;
+  const arr = (x) => (Array.isArray(x) ? x.slice(0, 3).map((s) => String(s).slice(0, 80)) : []);
+  return { praise: arr(j.praise), complaints: arr(j.complaints), quote: String(j.quote || "").slice(0, 120), sample: rs.length };
+}
+
+export async function runPageSpeed(env, auditId, url) {
+  const ps = await pageSpeed(env, url).catch((e) => ({ ok: false, error: String(e?.message || e).slice(0, 120) }));
+  if (!ps || !hasDB(env)) return ps;
+  const row = await loadAudit(env, auditId);
+  if (!row) return ps;
+  const full = row.full || null;
+  if (full) {
+    full.pro = { ...(full.pro || {}), pagespeed: ps };
+    if (ps.ok) {
+      const extra = pageSpeedChecks(ps);
+      full.website = full.website ? { ...full.website, checks: [...full.website.checks.filter((c) => !c.id.startsWith("psi_")), ...extra] } : full.website;
+    }
+    await env.DB.prepare("UPDATE audits SET full_json = ?2 WHERE id = ?1").bind(auditId, JSON.stringify(full)).run();
+  }
+  const data = row.data || {};
+  data.pagespeed = ps.ok ? { performance: ps.performance, seo: ps.seo, accessibility: ps.accessibility, lcpMs: ps.lcpMs } : { error: ps.error };
+  await env.DB.prepare("UPDATE audits SET data_json = ?2 WHERE id = ?1").bind(auditId, JSON.stringify(data)).run();
+  return ps;
+}
+
+// The parts we keep long-term (our own derived findings — no Google content beyond the place id).
 export function derived(a) {
   return {
     score: a.score, grade: a.grade, listingScore: a.listingScore, websiteScore: a.websiteScore, hasWebsite: a.hasWebsite,
+    visibilityScore: a.visibility?.score ?? null,
+    ranks: (a.visibility?.queries || []).map((q) => ({ id: q.id, label: q.label, position: q.position })),
     issues: a.issues.map((c) => ({ id: c.id, area: c.area, label: c.label, status: c.status, fix: c.fix })),
     competitors: { count: a.competitors.count, rankByReviews: a.competitors.rankByReviews, rankByRating: a.competitors.rankByRating, reviewsToMedian: a.competitors.reviewsToMedian },
+    duplicates: a.pro?.duplicates?.length ?? null,
+    themes: a.pro?.themes || null,
+    teardown: a.pro?.teardown ? { websiteScore: a.pro.teardown.websiteScore, theyHaveYouDont: a.pro.teardown.theyHaveYouDont, youHaveTheyDont: a.pro.teardown.youHaveTheyDont } : null,
+    pagespeed: a.pro?.pagespeed?.ok ? { performance: a.pro.pagespeed.performance, seo: a.pro.pagespeed.seo, accessibility: a.pro.pagespeed.accessibility, lcpMs: a.pro.pagespeed.lcpMs } : null,
     facts: factsFor(a),
   };
+}
+
+// Strip transient fields before caching the full audit for the report page (30-day cache, then re-fetched).
+export function cacheable(a) {
+  const { _reviews, _location, ...rest } = a;
+  return rest;
 }
 
 // ---------------- fix-it plan ----------------
@@ -146,35 +280,43 @@ export function factsFor(a) {
     business_type: a.place.category || a.place.typeLabel || "local business",
     city: a.place.city,
     overall_score: a.score, listing_score: a.listingScore, website_score: a.hasWebsite ? a.websiteScore : "no website",
+    visibility: a.visibility ? { score: a.visibility.score, ranks: a.visibility.queries.map((q) => `${q.position ? `#${q.position}` : "not in top 20"} for "${q.label}"${q.leader ? ` (leader: ${q.leader.reviewCount} reviews)` : ""}`) } : undefined,
     rating: a.place.rating, reviews: a.place.reviewCount, photos: a.place.photoCount,
     competitors: { count: a.competitors.count - 1, median_reviews: a.competitors.medianReviews, median_rating: a.competitors.medianRating, rank_by_reviews: `${a.competitors.rankByReviews} of ${a.competitors.count}`, reviews_needed_to_reach_median: a.competitors.reviewsToMedian },
-    problems: a.issues.slice(0, 10).map((c) => ({ area: c.area, check: c.label, finding: c.detail, standard_fix: c.fix })),
+    duplicates: a.pro?.duplicates?.length || undefined,
+    top_competitor_has_that_you_dont: a.pro?.teardown?.theyHaveYouDont?.length ? a.pro.teardown.theyHaveYouDont : undefined,
+    customers_praise: a.pro?.themes?.praise?.length ? a.pro.themes.praise : undefined,
+    customers_complain_about: a.pro?.themes?.complaints?.length ? a.pro.themes.complaints : undefined,
+    website_tools_found: a.website?.extras?.tools?.length ? a.website.extras.tools : undefined,
+    problems: a.issues.slice(0, 12).map((c) => ({ area: c.area, check: c.label, finding: c.detail, standard_fix: c.fix })),
   };
 }
 
 // Works from the stored facts so the plan can be (re)built without calling Google again.
-export async function actionPlan(env, facts) {
+export async function actionPlan(env, facts, { pro = false } = {}) {
   const system = [
     "You are a local-SEO and small-business operations consultant at Mesa Intelligence, a Las Cruces/El Paso firm that builds practical AI for local businesses.",
-    "Turn an audit of a business's Google listing and website into a short, prioritized fix-it plan the owner can act on this week.",
-    "Rules: Use only the facts given; never invent numbers. Plain language, no jargon, no markdown. Be specific to the business type.",
-    "Order by impact on calls and bookings. 4 to 6 fixes. Most fixes are things the owner can do themselves for free; say so.",
+    "Turn an audit of a business's Google listing, search visibility and website into a prioritized fix-it plan the owner can act on.",
+    "Rules: Use only the facts given; never invent numbers. Plain language, no jargon, no markdown. Be specific to the business type and city.",
+    pro ? "This is the paid Pro report: 6 to 8 fixes, each with concrete step-by-step 'how' (2-4 sentences), and a 30-day order of operations. If customers_praise is given, suggest using it on the website/listing; if customers_complain_about is given, address it operationally."
+        : "Order by impact on calls and bookings. 4 to 6 fixes. Most fixes are things the owner can do themselves for free; say so.",
     "At most one fix may mention that Mesa Intelligence can help, and only where it truly fits (e.g. automatic review requests, answering missed calls, online booking). No hard sell.",
-    'Respond with JSON only, exactly this shape: {"headline": "one sentence on the biggest opportunity", "fixes": [{"title": "short imperative", "why": "one sentence tied to their numbers", "how": "1-2 concrete sentences", "impact": "high|medium|low", "effort": "e.g. 15 minutes", "diy": true}]}',
+    'Respond with JSON only, exactly this shape: {"headline": "one sentence on the biggest opportunity", "fixes": [{"title": "short imperative", "why": "one sentence tied to their numbers", "how": "concrete sentences", "impact": "high|medium|low", "effort": "e.g. 15 minutes", "diy": true}]' + (pro ? ', "thirty_days": ["week 1: ...", "week 2: ...", "week 3: ...", "week 4: ..."]' : "") + "}",
   ].join("\n");
   try {
     if (!env.ANTHROPIC_API_KEY) throw new Error("no model");
-    const { text } = await runModelCollect({ env, system, messages: [{ role: "user", content: `Audit facts:\n${JSON.stringify(facts, null, 1)}` }], maxTokens: 1500 });
+    const { text } = await runModelCollect({ env, system, messages: [{ role: "user", content: `Audit facts:\n${JSON.stringify(facts, null, 1)}` }], maxTokens: pro ? 2500 : 1500 });
     const m = /\{[\s\S]*\}/.exec(text);
     const plan = m ? JSON.parse(m[0]) : null;
     if (plan?.fixes?.length) {
       return {
-        source: "ai",
+        source: "ai", pro,
         headline: String(plan.headline || "").slice(0, 300),
-        fixes: plan.fixes.slice(0, 6).map((f) => ({
-          title: String(f.title || "").slice(0, 120), why: String(f.why || "").slice(0, 400), how: String(f.how || "").slice(0, 600),
+        fixes: plan.fixes.slice(0, pro ? 8 : 6).map((f) => ({
+          title: String(f.title || "").slice(0, 120), why: String(f.why || "").slice(0, 400), how: String(f.how || "").slice(0, pro ? 900 : 600),
           impact: ["high", "medium", "low"].includes(f.impact) ? f.impact : "medium", effort: String(f.effort || "").slice(0, 40), diy: f.diy !== false,
         })),
+        thirtyDays: Array.isArray(plan.thirty_days) ? plan.thirty_days.slice(0, 4).map((s) => String(s).slice(0, 300)) : undefined,
       };
     }
   } catch (e) { console.error("action plan", e?.message || e); }
@@ -197,20 +339,36 @@ export async function savePlan(env, auditId, plan) {
 
 // ---------------- storage ----------------
 export async function saveAudit(env, rec) {
-  if (!hasDB(env)) return { id: rec.id || id("au") };
-  const row = { id: rec.id || id("au"), created_at: now(), ...rec };
+  const row = { id: rec.id || id("au"), created_at: now(), share_key: id("k").slice(2, 18), ...rec };
+  if (!hasDB(env)) return row;
   await env.DB.prepare(
-    `INSERT INTO audits (id, place_id, query, source, score, grade, data_json, ip, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
-  ).bind(row.id, row.place_id, row.query || null, row.source || "public", row.score, row.grade, JSON.stringify(row.data || {}), row.ip || null, row.created_at).run();
+    `INSERT INTO audits (id, place_id, query, source, score, grade, data_json, ip, created_at, share_key, full_json, expires_at, pro)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`
+  ).bind(row.id, row.place_id, row.query || null, row.source || "public", row.score, row.grade, JSON.stringify(row.data || {}), row.ip || null, row.created_at,
+    row.share_key, row.full ? JSON.stringify(row.full) : null, row.full ? row.created_at + CACHE_DAYS * 86400 : null, row.pro ? 1 : 0).run();
   if (row.plan) await savePlan(env, row.id, row.plan);
+  await recordHistory(env, row);
   return row;
+}
+
+export async function updateAudit(env, auditId, { full, data, pro, plan }) {
+  if (!hasDB(env)) return;
+  const sets = [], binds = [auditId];
+  const push = (sql, v) => { binds.push(v); sets.push(`${sql} = ?${binds.length}`); };
+  if (full) { push("full_json", JSON.stringify(full)); push("expires_at", now() + CACHE_DAYS * 86400); }
+  if (data) push("data_json", JSON.stringify(data));
+  if (pro != null) { push("pro", pro ? 1 : 0); if (pro) push("pro_at", now()); }
+  if (plan) push("plan_json", JSON.stringify(plan));
+  if (!sets.length) return;
+  await env.DB.prepare(`UPDATE audits SET ${sets.join(", ")} WHERE id = ?1`).bind(...binds).run();
 }
 
 export async function loadAudit(env, auditId) {
   if (!hasDB(env) || !auditId) return null;
   const row = await env.DB.prepare("SELECT * FROM audits WHERE id = ?").bind(auditId).first();
-  return row ? { ...row, data: safeJSON(row.data_json, {}), plan: safeJSON(row.plan_json, null) } : null;
+  if (!row) return null;
+  const expired = row.expires_at && row.expires_at < now();
+  return { ...row, data: safeJSON(row.data_json, {}), plan: safeJSON(row.plan_json, null), full: expired ? null : safeJSON(row.full_json, null), pro: Boolean(row.pro) };
 }
 
 export async function attachContact(env, auditId, c, plan) {
@@ -223,7 +381,31 @@ export async function attachContact(env, auditId, c, plan) {
 export async function recentAudits(env, limit = 50) {
   if (!hasDB(env)) return [];
   const { results } = await env.DB.prepare(
-    "SELECT id, place_id, query, source, score, grade, contact_name, contact_email, contact_phone, business_name, created_at, reported_at FROM audits ORDER BY created_at DESC LIMIT ?"
+    "SELECT id, place_id, query, source, score, grade, pro, pro_at, share_key, contact_name, contact_email, contact_phone, business_name, created_at, reported_at FROM audits ORDER BY created_at DESC LIMIT ?"
   ).bind(limit).all();
   return results || [];
+}
+
+// Score history per business — the trend line for re-audits and retainer clients.
+export async function recordHistory(env, row) {
+  if (!hasDB(env)) return;
+  const d = row.data || {};
+  try {
+    await env.DB.prepare("INSERT INTO audit_history (id, place_id, audit_id, score, grade, listing_score, website_score, visibility_score, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")
+      .bind(id("h"), row.place_id, row.id, row.score, row.grade, d.listingScore ?? null, d.websiteScore ?? null, d.visibilityScore ?? null, row.created_at || now()).run();
+  } catch (e) { console.error("history", e?.message || e); }
+}
+
+export async function historyFor(env, placeId, limit = 24) {
+  if (!hasDB(env) || !placeId) return [];
+  try {
+    const { results } = await env.DB.prepare("SELECT score, grade, listing_score, website_score, visibility_score, at, audit_id FROM audit_history WHERE place_id = ? ORDER BY at ASC LIMIT ?").bind(placeId, limit).all();
+    return results || [];
+  } catch { return []; }
+}
+
+export async function auditByStripeSession(env, sessionId) {
+  if (!hasDB(env) || !sessionId) return null;
+  const row = await env.DB.prepare("SELECT id FROM audits WHERE stripe_session = ?").bind(sessionId).first();
+  return row ? loadAudit(env, row.id) : null;
 }

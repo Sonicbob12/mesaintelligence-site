@@ -6,6 +6,7 @@ import EmbedPage from "@/pages/EmbedPage";
 import AdminPage from "@/pages/AdminPage";
 import LegalPage from "@/pages/LegalPage";
 import SmsPage from "@/pages/SmsPage";
+import AuditReportPage from "@/pages/AuditReportPage";
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
           <Route path="/privacy" element={<LegalPage />} />
           <Route path="/terms" element={<LegalPage />} />
           <Route path="/sms" element={<SmsPage />} />
+          <Route path="/audit/:id" element={<AuditReportPage />} />
         </Routes>
       </BrowserRouter>
       <Toaster theme="dark" position="bottom-right" toastOptions={{
