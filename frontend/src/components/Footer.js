@@ -32,6 +32,7 @@ export default function Footer() {
               <li><a href="#contact" className="hover:text-[#E5A93C] transition-colors">Contact</a></li>
               <li><a href="/privacy" className="hover:text-[#E5A93C] transition-colors">Privacy Policy</a></li>
               <li><a href="/terms" className="hover:text-[#E5A93C] transition-colors">Terms &amp; Conditions</a></li>
+              <li><a href="/sms" className="hover:text-[#E5A93C] transition-colors">SMS Program</a></li>
             </ul>
           </div>
         </div>

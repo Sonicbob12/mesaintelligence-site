@@ -129,7 +129,7 @@ export default function AgentChat({ tenant, compact = false, api = "/api", onMes
       </form>
       <p className="px-5 py-2 text-[10px] leading-snug text-[#9E9AA3]/70 border-t border-white/8" data-testid="sms-consent">
         If you give a mobile number, {tenant.name} may text you about your appointment or request (confirmations, reminders, replies). Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help.
-        {" "}<a href="/privacy" className="underline hover:text-[#E5A93C]">Privacy</a> · <a href="/terms" className="underline hover:text-[#E5A93C]">Terms</a>
+        {" "}<a href="/sms" className="underline hover:text-[#E5A93C]">SMS terms</a> · <a href="/privacy" className="underline hover:text-[#E5A93C]">Privacy</a> · <a href="/terms" className="underline hover:text-[#E5A93C]">Terms</a>
       </p>
     </div>
   );
