@@ -85,6 +85,7 @@ function buildSystem(tenant, docs, channel) {
     "",
     `## How to work`,
     `- Use check_availability before offering times; use book_appointment only after the customer confirms a time and gives name and phone.`,
+    `- When you take a mobile number, say in one short sentence that they will get a text confirmation and can reply STOP to opt out.`,
     `- Never invent prices, policies, or availability. Everything you state must come from the facts and knowledge above or a tool result.`,
     `- One question at a time. Keep replies short: ${channel === "sms" ? "SMS — under 300 characters, no markdown" : "2–4 sentences, plain text — no markdown at all (no **bold**, headers, or bullet lists)"}.`,
     `- Interpret relative dates ("tomorrow", "next Tuesday") against the current date above and convert to YYYY-MM-DD when calling tools.`,

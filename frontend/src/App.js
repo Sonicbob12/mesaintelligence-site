@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import LandingPage from "@/pages/LandingPage";
 import EmbedPage from "@/pages/EmbedPage";
 import AdminPage from "@/pages/AdminPage";
+import LegalPage from "@/pages/LegalPage";
 
 function App() {
   return (
@@ -13,6 +14,8 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/embed" element={<EmbedPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/privacy" element={<LegalPage />} />
+          <Route path="/terms" element={<LegalPage />} />
         </Routes>
       </BrowserRouter>
       <Toaster theme="dark" position="bottom-right" toastOptions={{

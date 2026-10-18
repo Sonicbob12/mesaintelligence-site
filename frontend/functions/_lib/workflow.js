@@ -144,10 +144,10 @@ function smsBody(tenant, p, first) {
   const hi = first ? `Hi ${first}, ` : "";
   if (p.kind === "booking") {
     const when = fmt(p.rec.start_at * 1000, tenant.timezone);
-    return `${hi}this is ${tenant.name}. You're booked: ${p.rec.service || "appointment"} on ${when}. Confirmation ${p.rec.id.slice(-6).toUpperCase()}. Reply to this text if anything changes.${tenant.demo ? " (Demo by Mesa Intelligence)" : ""}`;
+    return `${hi}this is ${tenant.name}. You're booked: ${p.rec.service || "appointment"} on ${when}. Confirmation ${p.rec.id.slice(-6).toUpperCase()}. Reply if anything changes.${tenant.demo ? " (Demo by Mesa Intelligence)" : ""} Reply STOP to opt out.`;
   }
-  if (p.kind === "handoff") return `${hi}this is ${tenant.name}. We got your request and a team member will call you back ${p.rec.urgency === "urgent" ? "shortly" : "within one business day"}.${tenant.demo ? " (Demo by Mesa Intelligence)" : ""}`;
-  return `${hi}this is ${tenant.name}. Thanks for reaching out — we have your details and someone will follow up soon.${tenant.demo ? " (Demo by Mesa Intelligence)" : ""}`;
+  if (p.kind === "handoff") return `${hi}this is ${tenant.name}. We got your request and a team member will call you back ${p.rec.urgency === "urgent" ? "shortly" : "within one business day"}.${tenant.demo ? " (Demo by Mesa Intelligence)" : ""} Reply STOP to opt out.`;
+  return `${hi}this is ${tenant.name}. Thanks for reaching out — we have your details and someone will follow up soon.${tenant.demo ? " (Demo by Mesa Intelligence)" : ""} Reply STOP to opt out.`;
 }
 
 function sheetRow(tenant, p, conversationId) {
@@ -217,7 +217,7 @@ export async function sendDueReminders(env, loadTenant) {
     if (!tenant) continue;
     try {
       const first = String(r.customer_name || "").split(/\s+/)[0];
-      await sendSms(env, { to: r.phone, from: tenant.sms_number || undefined, body: `${first ? `Hi ${first}, ` : ""}reminder from ${tenant.name}: ${r.service || "your appointment"} is ${fmt(r.start_at * 1000, tenant.timezone)}. Reply if you need to reschedule.` });
+      await sendSms(env, { to: r.phone, from: tenant.sms_number || undefined, body: `${first ? `Hi ${first}, ` : ""}reminder from ${tenant.name}: ${r.service || "your appointment"} is ${fmt(r.start_at * 1000, tenant.timezone)}. Reply if you need to reschedule. Reply STOP to opt out.` });
       sent++;
     } catch (e) { console.error("reminder", r.id, e?.message || e); }
     await env.DB.prepare("UPDATE workflow_runs SET reminder_sent = 1 WHERE id = ?").bind(r.id).run();
