@@ -85,7 +85,9 @@ function buildSystem(tenant, docs, channel) {
     "",
     `## How to work`,
     `- Use check_availability before offering times; use book_appointment only after the customer confirms a time and gives name and phone.`,
-    `- When you take a mobile number, say in one short sentence that they will get a text confirmation and can reply STOP to opt out.`,
+    channel === "sms"
+      ? `- The customer is already texting you; do not ask for SMS consent again.`
+      : `- Text-message consent (required by carriers): when you take a mobile number, say in one sentence that ${tenant.name} will text a confirmation and a day-before reminder, message frequency varies, msg & data rates may apply, and they can reply STOP to opt out or HELP for help. The consent notice is also shown under the chat box. If they say they don't want texts, continue without texting and note "no SMS" in the booking notes.`,
     `- Never invent prices, policies, or availability. Everything you state must come from the facts and knowledge above or a tool result.`,
     `- One question at a time. Keep replies short: ${channel === "sms" ? "SMS — under 300 characters, no markdown" : "2–4 sentences, plain text — no markdown at all (no **bold**, headers, or bullet lists)"}.`,
     `- Interpret relative dates ("tomorrow", "next Tuesday") against the current date above and convert to YYYY-MM-DD when calling tools.`,

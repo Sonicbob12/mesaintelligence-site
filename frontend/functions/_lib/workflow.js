@@ -35,6 +35,8 @@ function withTimeout(p, ms) {
   return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timed out after ${ms / 1000}s`)), ms))]);
 }
 
+// Customer declined texts ("no SMS" in the notes) — the agents write this when consent is refused.
+export const declinedSms = (notes) => /\bno[\s-]*(sms|text)/i.test(String(notes || ""));
 const looksFake = (phone) => { const d = String(phone || "").replace(/\D/g, "").slice(-10); return !d || /^(\d)\1{9}$/.test(d) || /^\d{3}555\d{4}$/.test(d) || d.startsWith("000"); };
 
 // ---------------------------------------------------------------------------
@@ -69,6 +71,7 @@ export async function runWorkflow(env, tenant, conversationId, payload) {
     if (!s.sms) return skip("Texting is off for this business");
     if (!twilioConfigured(env)) return skip("Twilio not connected yet");
     if (!customerPhone || !toE164(customerPhone)) return skip("No valid mobile number given");
+    if (declinedSms(payload.rec?.notes)) return skip("Customer declined texts");
     if (tenant.demo && looksFake(customerPhone)) return skip("Demo: not texting a placeholder number");
     if (tenant.demo) { const cap = await hit(env, "wf-sms:daily", 86400, Number(env.DEMO_SMS_DAILY_CAP || 30)); if (!cap.allowed) return skip("Demo text cap reached for today"); }
     const body = smsBody(tenant, payload, first);
@@ -209,12 +212,13 @@ export async function sendDueReminders(env, loadTenant) {
   if (!hasDB(env) || !twilioConfigured(env)) return { sent: 0 };
   const t = now();
   const { results } = await env.DB.prepare(
-    "SELECT r.*, b.customer_name, b.phone, b.service, b.start_at FROM workflow_runs r JOIN bookings b ON b.id = r.ref_id WHERE r.reminder_due IS NOT NULL AND r.reminder_sent = 0 AND r.reminder_due <= ? AND b.status = 'confirmed' AND b.start_at > ? LIMIT 50"
+    "SELECT r.*, b.customer_name, b.phone, b.service, b.start_at, b.notes FROM workflow_runs r JOIN bookings b ON b.id = r.ref_id WHERE r.reminder_due IS NOT NULL AND r.reminder_sent = 0 AND r.reminder_due <= ? AND b.status = 'confirmed' AND b.start_at > ? LIMIT 50"
   ).bind(t, t).all();
   let sent = 0;
   for (const r of results || []) {
     const tenant = await loadTenant(env, r.tenant_id);
     if (!tenant) continue;
+    if (declinedSms(r.notes)) { await env.DB.prepare("UPDATE workflow_runs SET reminder_sent = 1 WHERE id = ?").bind(r.id).run(); continue; }
     try {
       const first = String(r.customer_name || "").split(/\s+/)[0];
       await sendSms(env, { to: r.phone, from: tenant.sms_number || undefined, body: `${first ? `Hi ${first}, ` : ""}reminder from ${tenant.name}: ${r.service || "your appointment"} is ${fmt(r.start_at * 1000, tenant.timezone)}. Reply if you need to reschedule. Reply STOP to opt out.` });

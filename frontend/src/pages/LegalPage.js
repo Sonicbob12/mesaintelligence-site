@@ -20,7 +20,7 @@ export default function LegalPage() {
         <p className="text-sm text-[#9E9AA3] mb-10">{BRAND} · Last updated {UPDATED}</p>
         {isTerms ? <Terms /> : <Privacy />}
         <p className="text-sm text-[#9E9AA3] mt-16">
-          Questions: <a href="mailto:hello@mesaintelligence.ai" className="text-[#E5A93C]">hello@mesaintelligence.ai</a> · (575) 888-8534 · {BRAND}, Las Cruces, New Mexico.
+          Questions: <a href="mailto:hello@mesaintelligence.ai" className="text-[#E5A93C]">hello@mesaintelligence.ai</a> · (575) 254-1185 · {BRAND}, Las Cruces, New Mexico.
           {" "}See also our <Link to={isTerms ? "/privacy" : "/terms"} className="text-[#E5A93C]">{isTerms ? "Privacy Policy" : "Terms & Conditions"}</Link>.
         </p>
       </div>
