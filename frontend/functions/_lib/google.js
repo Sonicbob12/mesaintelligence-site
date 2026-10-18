@@ -43,9 +43,12 @@ async function fetchToken(env) {
   return data.access_token;
 }
 
+// Calendar and Sheets live on different hosts. GOOGLE_BASE_URL (tests) overrides both.
+const hostFor = (env, path) => env.GOOGLE_BASE_URL || (path.startsWith("/v4/spreadsheets") ? "https://sheets.googleapis.com" : "https://www.googleapis.com");
+
 async function gapi(env, method, path, body) {
   const token = await accessToken(env);
-  const res = await fetch(`${env.GOOGLE_BASE_URL || "https://www.googleapis.com"}${path}`, {
+  const res = await fetch(`${hostFor(env, path)}${path}`, {
     method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
