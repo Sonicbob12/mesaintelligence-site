@@ -30,6 +30,8 @@ export async function onRequestGet({ env }) {
     stripe: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_ID),
     stripe_webhook: Boolean(env.STRIPE_WEBHOOK_SECRET),
     pagespeed_key: Boolean(env.PSI_API_KEY),
+    outbound: env.OUTBOUND_ENABLED === "1" ? "live" : "dry-run",
+    sales_calendar: Boolean(env.SALES_CALENDAR_ID),
     admin: Boolean(env.ADMIN_TOKEN),
     db,
     storage: hasDB(env) ? "d1" : "memory (sessions reset; bind D1 as DB to persist)",

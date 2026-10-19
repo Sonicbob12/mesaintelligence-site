@@ -61,7 +61,7 @@ export default function AuditReportPage() {
             <AuditReport full={data.full} plan={data.plan} pro={data.pro} history={data.history} link={link} showPrint />
             {data.pro_mode === "paid" && !data.pro && (
               <div className="mt-8 border border-[#E5A93C]/50 bg-[#E5A93C]/[0.04] p-6 text-sm print:hidden">
-                <b>Want the Pro report?</b> Two more search rankings, duplicate-listing check, the #1 competitor's website teardown, review themes, PageSpeed and a 30-day plan — ${data.pro_price}, one time. <Link to="/#audit" className="text-[#E5A93C] underline">Start from the audit section</Link> and choose “Unlock the Pro report”.
+                <b>Want the Pro report?</b> Two more search rankings, duplicate-listing check, the #1 competitor's website teardown, review themes, PageSpeed and a 30-day plan — ${data.pro_price}, one time, credited toward any build with Mesa Intelligence. <Link to="/#audit" className="text-[#E5A93C] underline">Start from the audit section</Link> and choose “Unlock the Pro report”.
               </div>
             )}
             <p className="mt-10 text-sm text-[#9E9AA3] print:hidden">Questions or want help with the fixes? <a href="mailto:hello@mesaintelligence.ai" className="text-[#E5A93C]">hello@mesaintelligence.ai</a> · <Link to="/#contact" className="text-[#E5A93C]">Book a free walkthrough</Link></p>

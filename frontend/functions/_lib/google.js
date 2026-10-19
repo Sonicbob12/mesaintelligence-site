@@ -68,6 +68,16 @@ export async function createCalendarEvent(env, calendarId, { summary, descriptio
   return { id: ev.id, link: ev.htmlLink || null };
 }
 
+// Calendar: busy windows between two instants (events.list; the events scope covers it). Returns [{startMs,endMs}].
+export async function busyWindows(env, calendarId, fromMs, toMs) {
+  const q = new URLSearchParams({ timeMin: new Date(fromMs).toISOString(), timeMax: new Date(toMs).toISOString(), singleEvents: "true", maxResults: "250", orderBy: "startTime" });
+  const data = await gapi(env, "GET", `/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${q}`);
+  return (data.items || [])
+    .filter((e) => e.status !== "cancelled" && e.transparency !== "transparent")
+    .map((e) => ({ startMs: Date.parse(e.start?.dateTime || `${e.start?.date}T00:00:00Z`), endMs: Date.parse(e.end?.dateTime || `${e.end?.date}T00:00:00Z`), summary: e.summary || "" }))
+    .filter((w) => Number.isFinite(w.startMs) && Number.isFinite(w.endMs));
+}
+
 // Sheets: append one row to the first sheet (or a named tab). Returns the updated range.
 export async function appendSheetRow(env, spreadsheetId, row, tab = "Sheet1") {
   const range = encodeURIComponent(`${tab}!A1`);

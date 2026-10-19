@@ -20,6 +20,7 @@ async function post(path, body) {
   return data;
 }
 
+const CREDIT_NOTE = "Credited in full toward any build with Mesa Intelligence.";
 const PRO_FEATURES = ["Your rank for two more searches people type (\"near me\", \"best …\")", "Duplicate / conflicting listing check", "Teardown of the #1 competitor's website — what they have that you don't", "What your reviews say customers love and complain about", "Google PageSpeed mobile scores", "An 8-step plan with a 30-day order of operations", "A printable report page you can share"];
 
 export default function LocalAudit() {
@@ -200,7 +201,7 @@ export default function LocalAudit() {
                             <ul className="text-sm text-[#9E9AA3] font-light mt-3 space-y-1">{PRO_FEATURES.map((f) => <li key={f}>· {f}</li>)}</ul>
                           </>
                         ) : (
-                          <p className="text-sm text-[#9E9AA3] font-light">A prioritized list of what to fix first and how — most of it you can do yourself this week. We'll email you the full report too.</p>
+                          <p className="text-sm text-[#9E9AA3] font-light">A prioritized list of what to fix first and how — most of it you can do yourself this week. We'll email you the full report too.{proMode === "paid" ? ` The full Pro report is $${proPrice}, ${CREDIT_NOTE.charAt(0).toLowerCase()}${CREDIT_NOTE.slice(1)}` : ""}</p>
                         )}
                       </div>
                       <div className="md:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -244,6 +245,7 @@ export default function LocalAudit() {
                       </div>
                       <div className="md:col-span-4 flex flex-col justify-center gap-3">
                         <div className="font-display text-4xl font-light">${proPrice} <span className="text-sm text-[#9E9AA3]">one time</span></div>
+                        <p className="text-sm text-[#9E9AA3]">{CREDIT_NOTE}</p>
                         <button onClick={buyPro} disabled={busy === "checkout"} className={primary} data-testid="audit-buy-pro">{busy === "checkout" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Unlock the Pro report</button>
                         <p className="text-[11px] text-[#9E9AA3]">Secure checkout by Stripe. Delivered to your email and report page within a minute.</p>
                       </div>
