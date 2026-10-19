@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import AuditReport from "@/components/AuditReport";
+import PlanOffer from "@/components/PlanOffer";
 
 // /audit/:id?k=<share_key> — the shareable, printable report page (basic or Pro).
 // After a Stripe purchase the page lands here with &paid=1 and polls until the webhook unlocks Pro.
@@ -59,6 +60,7 @@ export default function AuditReportPage() {
           <>
             {data.contact_name && <p className="text-sm text-[#9E9AA3] mb-6">Prepared for {data.contact_name}{data.business ? ` · ${data.business}` : ""}</p>}
             <AuditReport full={data.full} plan={data.plan} pro={data.pro} history={data.history} link={link} showPrint />
+            <PlanOffer auditId={id} shareKey={k} pro={data.pro} business={data.business} email="" />
             {data.pro_mode === "paid" && !data.pro && (
               <div className="mt-8 border border-[#E5A93C]/50 bg-[#E5A93C]/[0.04] p-6 text-sm print:hidden">
                 <b>Want the Pro report?</b> Two more search rankings, duplicate-listing check, the #1 competitor's website teardown, review themes, PageSpeed and a 30-day plan — ${data.pro_price}, one time, credited toward any build with Mesa Intelligence. <Link to="/#audit" className="text-[#E5A93C] underline">Start from the audit section</Link> and choose “Unlock the Pro report”.

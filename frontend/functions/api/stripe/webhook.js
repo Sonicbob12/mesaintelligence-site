@@ -4,6 +4,7 @@
 import { verifyWebhook } from "../../_lib/stripe.js";
 import { unlockPro } from "../../_lib/audit_pro.js";
 import { loadAudit, auditByStripeSession } from "../../_lib/audit.js";
+import { provisionPlan, updatePlanFromSubscription } from "../../_lib/plan.js";
 import { hasDB } from "../../_lib/db.js";
 import { json } from "../../_lib/http.js";
 
@@ -13,6 +14,17 @@ export async function onRequestPost({ request, env, waitUntil }) {
   try { event = await verifyWebhook(env, raw, request.headers.get("stripe-signature")); }
   catch (e) { console.error("stripe webhook", e?.message || e); return json({ detail: "Bad signature" }, 400); }
 
+  const obj = event.data?.object || {};
+  // Local Growth Plan subscription → provision tenant + portal
+  if ((event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") && (obj.mode === "subscription" || obj.metadata?.kind === "plan")) {
+    if (obj.payment_status && obj.payment_status !== "paid" && obj.payment_status !== "no_payment_required") return json({ received: true, pending: true });
+    try { await provisionPlan(env, obj, { waitUntil }); } catch (e) { console.error("provision plan", e?.message || e); return json({ detail: "provision failed" }, 500); }
+    return json({ received: true, plan: true });
+  }
+  if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted" || event.type === "customer.subscription.created") {
+    try { await updatePlanFromSubscription(env, obj); } catch (e) { console.error("sub update", e?.message || e); }
+    return json({ received: true });
+  }
   if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
     const s = event.data?.object || {};
     if (s.payment_status && s.payment_status !== "paid") return json({ received: true, pending: true });

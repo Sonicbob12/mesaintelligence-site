@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw, LogOut } from "lucide-react";
 import AdminAudit from "@/components/AdminAudit";
 import AdminOutbound from "@/components/AdminOutbound";
+import AdminPlans from "@/components/AdminPlans";
 import AdminWorkflows from "@/components/AdminWorkflows";
 
 // /admin — minimal operator console. Paste the ADMIN_TOKEN (kept in this tab only).
@@ -162,6 +163,8 @@ export default function AdminPage() {
         {health && tenantId && <AdminWorkflows call={call} tenantId={tenantId} />}
 
         {health && <AdminAudit call={call} enabled={health.places} />}
+
+        {health && <AdminPlans call={call} />}
 
         {health && <AdminOutbound call={call} />}
 
