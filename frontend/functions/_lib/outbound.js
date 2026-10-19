@@ -50,21 +50,45 @@ async function fetchText(url, ms = 6000) {
     return (await res.text()).slice(0, 1_200_000);
   } catch { return ""; }
 }
+// Cloudflare's email obfuscation: <a href="/cdn-cgi/l/email-protection#HEX" data-cfemail="HEX">
+function decodeCf(hex) {
+  try { const k = parseInt(hex.slice(0, 2), 16); let out = ""; for (let i = 2; i < hex.length; i += 2) out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ k); return out; } catch { return ""; }
+}
+function emailsIn(html) {
+  const out = [];
+  for (const m of html.matchAll(/data-cfemail="([0-9a-f]+)"|email-protection#([0-9a-f]+)/gi)) { const e = decodeCf(m[1] || m[2]); if (e.includes("@")) out.push({ e, w: 3 }); }
+  const text = html
+    .replace(/&#64;|&commat;|%40/g, "@").replace(/&#46;|&period;/g, ".")
+    .replace(/\s*(?:\[|\(|\{)\s*at\s*(?:\]|\)|\})\s*/gi, "@").replace(/\s*(?:\[|\(|\{)\s*dot\s*(?:\]|\)|\})\s*/gi, ".");
+  for (const m of text.matchAll(/"email"\s*:\s*"([^"]+@[^"]+)"/gi)) out.push({ e: m[1], w: 3 }); // JSON-LD
+  for (const m of text.matchAll(/mailto:([^"'?\s>]+)/gi)) out.push({ e: decodeURIComponent(m[1]), w: 3 });
+  for (const m of text.match(EMAIL_RE) || []) out.push({ e: m, w: 1 });
+  return out;
+}
+function contactLinks(html, origin) {
+  const links = new Set();
+  for (const m of html.matchAll(/<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]{0,80}?)<\/a>/gi)) {
+    const href = m[1], label = m[2].replace(/<[^>]+>/g, "");
+    if (!/contact|about|get[-\s]?in[-\s]?touch|reach[-\s]?us|quote|estimate/i.test(href + " " + label)) continue;
+    try { const u = new URL(href, origin); if (u.origin === origin) links.add(u.origin + u.pathname.replace(/\/$/, "")); } catch {}
+  }
+  return [...links].slice(0, 4);
+}
 export async function findEmail(website) {
   if (!website) return null;
   let origin, given; try { const u = new URL(/^https?:\/\//i.test(website) ? website : `https://${website}`); origin = u.origin; given = u.toString(); } catch { return null; }
-  const pages = [...new Set([given, origin, `${origin}/contact`, `${origin}/contact-us`, `${origin}/about`])];
   const found = new Map();
-  for (const u of pages) {
-    const html = await fetchText(u);
-    if (!html) continue;
-    const text = html.replace(/&#64;|&commat;/g, "@").replace(/\s*\[at\]\s*|\s*\(at\)\s*/gi, "@");
-    for (const m of text.match(EMAIL_RE) || []) {
-      const e = m.toLowerCase();
-      if (BAD_EMAIL.test(e) || e.length > 60) continue;
-      found.set(e, (found.get(e) || 0) + (/mailto:/i.test(text.slice(Math.max(0, text.indexOf(m) - 10), text.indexOf(m))) ? 3 : 1));
+  const add = (list) => { for (const { e, w } of list) { const x = e.toLowerCase().trim().replace(/^mailto:/, ""); if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(x) || BAD_EMAIL.test(x) || x.length > 60) continue; found.set(x, (found.get(x) || 0) + w); } };
+  const home = await fetchText(given);
+  if (home) add(emailsIn(home));
+  if (!found.size) {
+    const pages = [...new Set([...(home ? contactLinks(home, origin) : []), `${origin}/contact`, `${origin}/contact-us`, `${origin}/contact.html`, `${origin}/about`, `${origin}/about-us`])].filter((u) => u !== given.replace(/\/$/, ""));
+    for (const u of pages.slice(0, 6)) {
+      const html = await fetchText(u, 5000);
+      if (!html) continue;
+      add(emailsIn(html));
+      if (found.size) break;
     }
-    if (found.size) break;
   }
   if (!found.size) return null;
   const host = origin.replace(/^https?:\/\/(www\.)?/, "");
@@ -160,9 +184,14 @@ export async function sendEmail(env, { to, subject, text, unsub, replyTo }) {
 }
 
 // ---------- storage ----------
-async function alreadyContacted(env, placeId) {
-  const r = await env.DB.prepare("SELECT id, status FROM outreach WHERE place_id = ?").bind(placeId).first();
-  return r || null;
+async function alreadyContacted(env, placeId, retryDays = 14) {
+  const r = await env.DB.prepare("SELECT id, status, email, audit_id, subject, body_text, unsub_token, updated_at FROM outreach WHERE place_id = ?").bind(placeId).first();
+  if (!r) return null;
+  if ((r.status === "skipped" || r.status === "error") && r.updated_at < now() - retryDays * 86400) {
+    await env.DB.prepare("DELETE FROM outreach WHERE id = ?").bind(r.id).run(); // re-evaluate from scratch
+    return null;
+  }
+  return r;
 }
 async function suppressed(env, email) {
   if (!email) return false;
@@ -207,7 +236,19 @@ export async function runDaily(env, { date = new Date(), limit, dryRun } = {}) {
 
   for (const biz of candidates) {
     if (budget <= 0) break;
-    const prior = await alreadyContacted(env, biz.id);
+    const prior = await alreadyContacted(env, biz.id, Number(env.OUTBOUND_RETRY_DAYS || 14));
+    if (prior && prior.status === "queued" && prior.email && prior.body_text) {
+      // Drafted by a dry run: send it now (live) or leave it queued.
+      if (live) {
+        try {
+          if (await suppressed(env, prior.email)) { await setStatus(env, prior.id, "unsubscribed"); continue; }
+          await sendEmail(env, { to: prior.email, subject: prior.subject, text: prior.body_text, unsub: unsubLink(env, prior.unsub_token) });
+          await setStatus(env, prior.id, "sent", { sent_at: now(), run_id: run.id });
+          run.emailed++; budget--; log.push({ business: biz.name, email: prior.email, status: "sent (from dry-run draft)", subject: prior.subject });
+        } catch (e) { run.errors.push(`${biz.name}: ${String(e?.message || e).slice(0, 160)}`); }
+      } else log.push({ business: biz.name, email: prior.email, status: "queued (dry run, already drafted)", subject: prior.subject });
+      continue;
+    }
     if (prior) { log.push({ business: biz.name, status: "skipped", reason: `already ${prior.status}` }); continue; }
     const base = { id: id("ob"), place_id: biz.id, run_id: run.id, category: plan.category.key, city: plan.city.key, business: biz.name, website: biz.website, phone: biz.phone };
     const skip = async (reason) => { run.skipped++; log.push({ business: biz.name, status: "skipped", reason }); await insertOutreach(env, { ...base, status: "skipped", skip_reason: reason }); };
