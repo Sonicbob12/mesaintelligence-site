@@ -20,14 +20,16 @@ import { localDate } from "./time.js";
 
 const TZ = "America/Denver";
 export const SCHEDULE = {
-  mon: { key: "hvac", label: "HVAC", search: "HVAC contractor", angle: "missed calls and after-hours dispatch — every call that rings out is a service ticket somebody else gets" },
-  tue: { key: "restaurant", label: "Restaurants", search: "restaurant", angle: "hosting and reservations — people decide where to eat from the listing, the photos and whether they can book in two taps" },
-  wed: { key: "dental", label: "Dental", search: "dentist", angle: "new-patient intake — the practice that answers first and books online wins the patient" },
-  thu: { key: "legal", label: "Legal", search: "law firm", angle: "client intake — a potential client who can't reach you in the first hour calls the next firm on the list" },
+  mon: { key: "hvac", label: "HVAC", search: "HVAC contractor", queries: ["HVAC contractor", "air conditioning repair", "heating and cooling service", "refrigerated air installation", "furnace repair"], angle: "missed calls and after-hours dispatch — every call that rings out is a service ticket somebody else gets" },
+  tue: { key: "restaurant", label: "Restaurants", search: "restaurant", queries: ["restaurant", "mexican restaurant", "family restaurant", "steakhouse", "cafe", "bar and grill"], angle: "hosting and reservations — people decide where to eat from the listing, the photos and whether they can book in two taps" },
+  wed: { key: "dental", label: "Dental", search: "dentist", queries: ["dentist", "dental clinic", "family dentistry", "orthodontist", "pediatric dentist", "cosmetic dentist"], angle: "new-patient intake — the practice that answers first and books online wins the patient" },
+  thu: { key: "legal", label: "Legal", search: "law firm", queries: ["law firm", "personal injury lawyer", "family law attorney", "criminal defense attorney", "immigration lawyer", "estate planning attorney"], angle: "client intake — a potential client who can't reach you in the first hour calls the next firm on the list" },
 };
 export const CITIES = [
-  { key: "las-cruces", label: "Las Cruces", query: "Las Cruces, NM", center: { latitude: 32.3199, longitude: -106.7637 } },
-  { key: "el-paso", label: "El Paso", query: "El Paso, TX", center: { latitude: 31.7619, longitude: -106.485 } },
+  { key: "las-cruces", label: "Las Cruces", query: "Las Cruces, NM", center: { latitude: 32.3199, longitude: -106.7637 },
+    nearby: [{ query: "Mesilla, NM", center: { latitude: 32.2701, longitude: -106.8006 } }, { query: "Anthony, NM", center: { latitude: 32.0040, longitude: -106.6056 } }, { query: "Santa Teresa, NM", center: { latitude: 31.8559, longitude: -106.6392 } }, { query: "Sunland Park, NM", center: { latitude: 31.7965, longitude: -106.5799 } }] },
+  { key: "el-paso", label: "El Paso", query: "El Paso, TX", center: { latitude: 31.7619, longitude: -106.485 },
+    nearby: [{ query: "Horizon City, TX", center: { latitude: 31.6929, longitude: -106.2072 } }, { query: "Socorro, TX", center: { latitude: 31.6546, longitude: -106.3033 } }, { query: "Canutillo, TX", center: { latitude: 31.9118, longitude: -106.5992 } }, { query: "Anthony, TX", center: { latitude: 31.9993, longitude: -106.6050 } }] },
 ];
 
 export function planFor(env, date = new Date()) {
@@ -97,16 +99,52 @@ export async function findEmail(website) {
 }
 
 // ---------- candidate businesses for the day ----------
-export async function findCandidates(env, plan, max = 40) {
-  const data = await placesText(env, `${plan.category.search} in ${plan.city.query}`, plan.city.center, 20);
-  let list = data.places || [];
-  if (data.nextPageToken && list.length < max) {
-    const more = await placesText(env, `${plan.category.search} in ${plan.city.query}`, plan.city.center, 20, data.nextPageToken).catch(() => ({ places: [] }));
-    list = [...list, ...(more.places || [])];
+// Streams businesses for the day's category: every query variant in the main city (2 pages each), then the
+// nearby towns. Lazy — the caller stops pulling once the daily cap is met, so only the searches needed are paid for.
+export async function* streamCandidates(env, plan, { maxSearches = Number(env.OUTBOUND_MAX_SEARCHES || 14), resume = true } = {}) {
+  const seen = new Set();
+  const queries = plan.category.queries?.length ? plan.category.queries : [plan.category.search];
+  const areas = [{ query: plan.city.query, center: plan.city.center, pages: 2 }, ...(plan.city.nearby || []).map((n) => ({ ...n, pages: 1 }))];
+  const pairs = areas.flatMap((area) => queries.map((q) => ({ area, q })));
+  // Daily cursor (in rate_limits): how many query/area pairs earlier runs today fully walked, so the hourly top-ups
+  // resume instead of re-paying for the same searches.
+  const cursorKey = `outbound-cursor:${plan.day}`;
+  let done = 0;
+  if (resume && hasDB(env)) {
+    try { const r = await env.DB.prepare("SELECT count, window_start FROM rate_limits WHERE k = ?").bind(cursorKey).first(); done = r ? Number(r.count) || 0 : 0; } catch { done = 0; }
   }
-  return list
-    .filter((p) => !p.businessStatus || p.businessStatus === "OPERATIONAL")
-    .map((p) => ({ id: p.id, name: p.displayName?.text || "", website: p.websiteUri || "", phone: p.nationalPhoneNumber || "", rating: p.rating ?? null, reviews: p.userRatingCount || 0, address: p.formattedAddress || "" }));
+  const markDone = async () => {
+    if (!resume || !hasDB(env)) return;
+    try { await env.DB.prepare("INSERT INTO rate_limits (k, window_start, count) VALUES (?1, ?2, ?3) ON CONFLICT(k) DO UPDATE SET count = ?3, window_start = ?2").bind(cursorKey, now(), done).run(); } catch {}
+  };
+  let searches = 0;
+  for (let i = done; i < pairs.length; i++) {
+    const { area, q } = pairs[i];
+    let token = null;
+    for (let page = 0; page < area.pages; page++) {
+      if (searches >= maxSearches) return;
+      searches++;
+      let data;
+      try { data = await placesText(env, `${q} in ${area.query}`, area.center, 20, token || undefined); }
+      catch (e) { console.error("places", q, area.query, e?.message || e); break; }
+      for (const p of data.places || []) {
+        if (seen.has(p.id) || (p.businessStatus && p.businessStatus !== "OPERATIONAL")) continue;
+        seen.add(p.id);
+        yield { id: p.id, name: p.displayName?.text || "", website: p.websiteUri || "", phone: p.nationalPhoneNumber || "", rating: p.rating ?? null, reviews: p.userRatingCount || 0, address: p.formattedAddress || "", query: `${q} in ${area.query}` };
+      }
+      token = data.nextPageToken;
+      if (!token) break;
+    }
+    done = i + 1;
+    await markDone();
+  }
+}
+
+// Kept for callers that want a plain list (first page of the main query).
+export async function findCandidates(env, plan, max = 40) {
+  const out = [];
+  for await (const c of streamCandidates(env, plan, { maxSearches: 2, resume: false })) { out.push(c); if (out.length >= max) break; }
+  return out;
 }
 async function placesText(env, textQuery, center, pageSize, pageToken) {
   const res = await fetch(`${env.PLACES_BASE_URL || "https://places.googleapis.com"}/v1/places:searchText`, {
@@ -216,7 +254,9 @@ export async function suppress(env, email, reason) {
 }
 
 // ---------- the daily run ----------
-export async function runDaily(env, { date = new Date(), limit, dryRun } = {}) {
+export async function runDaily(env, { date = new Date(), limit, dryRun, timeBudgetMs } = {}) {
+  const t0 = Date.now();
+  const deadline = t0 + Number(timeBudgetMs || env.OUTBOUND_TIME_BUDGET_MS || 25000);
   if (!hasDB(env)) throw new Error("D1 not bound");
   const plan = planFor(env, date);
   const live = env.OUTBOUND_ENABLED === "1" && !dryRun;
@@ -230,12 +270,12 @@ export async function runDaily(env, { date = new Date(), limit, dryRun } = {}) {
   const already = await env.DB.prepare("SELECT COUNT(*) AS n FROM outreach WHERE run_id IN (SELECT id FROM outbound_runs WHERE day = ?1 AND mode = 'daily') AND status IN ('sent')").bind(plan.day).first();
   let budget = Math.max(0, cap - Number(already?.n || 0));
 
-  let candidates = [];
-  try { candidates = await findCandidates(env, plan); run.found = candidates.length; }
-  catch (e) { run.errors.push(`places: ${e.message}`); await saveRun(env, run); return { plan, run, log, live }; }
+  if (budget <= 0) { run.notes = "daily cap already reached"; await saveRun(env, run); return { plan, run, log, live }; }
 
-  for (const biz of candidates) {
+  for await (const biz of streamCandidates(env, plan)) {
     if (budget <= 0) break;
+    if (Date.now() > deadline) { run.notes = `time budget reached with ${budget} left — the hourly tick continues`; break; }
+    run.found++;
     const prior = await alreadyContacted(env, biz.id, Number(env.OUTBOUND_RETRY_DAYS || 14));
     if (prior && prior.status === "queued" && prior.email && prior.body_text) {
       // Drafted by a dry run: send it now (live) or leave it queued.

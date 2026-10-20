@@ -8,7 +8,7 @@ const FEATURES = [
   "Monthly re-audit of your listing, website and search rank — with a 'what changed' email",
   "One-tap review requests to customers after every job",
   "A 24/7 chat agent on your website that answers, books and emails you every lead",
-  "Voice line / missed-call text-back so after-hours calls become booked jobs",
+  "A voice line that answers after-hours calls and books the job",
   "Your fix-it list worked month by month, with the score to prove it",
 ];
 

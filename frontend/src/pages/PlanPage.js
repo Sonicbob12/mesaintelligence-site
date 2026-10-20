@@ -24,7 +24,7 @@ const TIERS = [
   {
     name: "Local Growth Plan", featured: true, price: "$249", per: "/ month", alt: "or $2,388 / year ($199 / mo)",
     blurb: "Fixed for you — and kept fixed. Runs every month without you touching it.",
-    items: ["Everything in the Pro report, re-run monthly with a \"what changed\" email", "24/7 chat agent on your website that answers questions, books, and emails you every lead", "One-tap review requests to customers after each job", "Voice line / missed-call text-back — after-hours calls become booked jobs", "Your fix-it list worked month by month, with the score to prove it", "Private dashboard: hours, services, review link, widget, billing", "Cancel any time"],
+    items: ["Everything in the Pro report, re-run monthly with a \"what changed\" email", "24/7 chat agent on your website that answers questions, books, and emails you every lead", "One-tap review requests to customers after each job", "A voice line that answers after-hours calls and books the job", "Your fix-it list worked month by month, with the score to prove it", "Private dashboard: hours, services, review link, widget, billing", "Cancel any time"],
   },
 ];
 
@@ -34,7 +34,7 @@ const FAQ = [
   ["Do I need a new website?", "No. The chat agent is one line of code on your existing site, and most listing fixes happen in Google Business Profile. If your site is the problem, the plan tells you exactly what to change — or we quote a rebuild separately."],
   ["Is there a contract?", "No. Month to month, cancel from your dashboard. Yearly is cheaper if you want it."],
   ["What does the $99 Pro report credit mean?", "If you bought the Pro report first, $99 comes off your first plan payment automatically at checkout."],
-  ["Who's behind this?", "Bobby Lloyd, Mesa Intelligence LLC, Las Cruces NM. Twenty years running crews and bids in construction, now building practical AI for local businesses. You'll have my direct email."],
+  ["Who's behind this?", "Bobby Lloyd, Mesa Intelligence LLC, Santa Teresa NM. A construction superintendent, project manager and estimator who also ran his own landscaping company — now building practical AI for local businesses. You'll have my direct email."],
 ];
 
 export default function PlanPage() {

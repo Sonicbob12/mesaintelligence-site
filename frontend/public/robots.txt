@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /portal
+Disallow: /audit/
+Disallow: /api/
+Disallow: /embed
+
+Sitemap: https://mesaintelligence.ai/sitemap.xml

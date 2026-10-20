@@ -13,7 +13,7 @@ export default function Footer() {
             Practical AI integration for local businesses, built by someone who has run one.
           </p>
         </div>
-        <div className="flex gap-16">
+        <div className="flex flex-wrap gap-12 sm:gap-16">
           <div>
             <div className="eyebrow mb-5">Based in</div>
             <ul className="space-y-2.5 font-mono text-[11px] uppercase tracking-[0.18em] text-[#9E9AA3]">
@@ -21,6 +21,21 @@ export default function Footer() {
               <li>Serving Las Cruces, El Paso</li>
               <li>&amp; Southern New Mexico</li>
               <li className="pt-2 normal-case tracking-normal"><a href="mailto:hello@mesaintelligence.ai" className="hover:text-[#E5A93C] transition-colors">hello@mesaintelligence.ai</a></li>
+            </ul>
+          </div>
+          <div>
+            <div className="eyebrow mb-5">Local</div>
+            <ul className="space-y-2.5 font-mono text-[11px] uppercase tracking-[0.18em] text-[#9E9AA3]">
+              <li><a href="/ai-receptionist-las-cruces/" className="hover:text-[#E5A93C] transition-colors">AI Receptionist · Las Cruces</a></li>
+              <li><a href="/ai-receptionist-el-paso/" className="hover:text-[#E5A93C] transition-colors">AI Receptionist · El Paso</a></li>
+              <li><a href="/ai-consulting-las-cruces/" className="hover:text-[#E5A93C] transition-colors">AI Consulting · Las Cruces</a></li>
+              <li><a href="/ai-consulting-el-paso/" className="hover:text-[#E5A93C] transition-colors">AI Consulting · El Paso</a></li>
+              <li><a href="/ai-for-hvac-companies/" className="hover:text-[#E5A93C] transition-colors">HVAC</a></li>
+              <li><a href="/ai-for-dental-offices/" className="hover:text-[#E5A93C] transition-colors">Dental</a></li>
+              <li><a href="/ai-for-law-firms/" className="hover:text-[#E5A93C] transition-colors">Law Firms</a></li>
+              <li><a href="/ai-for-restaurants/" className="hover:text-[#E5A93C] transition-colors">Restaurants</a></li>
+              <li><a href="/free-google-business-profile-audit/" className="hover:text-[#E5A93C] transition-colors">Free Listing Audit</a></li>
+              <li><a href="/plan" className="hover:text-[#E5A93C] transition-colors">Pricing</a></li>
             </ul>
           </div>
           <div>
