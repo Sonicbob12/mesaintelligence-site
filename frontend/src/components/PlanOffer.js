@@ -42,7 +42,7 @@ export default function PlanOffer({ auditId, shareKey, pro, business, outreachId
           <div><span className="font-display text-5xl font-light">${monthly}</span><span className="text-sm text-[#9E9AA3]"> / month</span></div>
           <button onClick={() => go("month")} disabled={Boolean(busy)} className={primary} data-testid="plan-monthly">{busy === "month" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Start the plan — monthly</button>
           <button onClick={() => go("year")} disabled={Boolean(busy)} className={ghost} data-testid="plan-annual">{busy === "year" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Pay yearly — ${annual} (${Math.round(annual / 12)}/mo)</button>
-          <p className="text-[11px] text-[#9E9AA3]">Cancel any time from your dashboard. Set up in 5 minutes; the voice line is turned on for you within 2 business days. Secure checkout by Stripe.</p>
+          <p className="text-[11px] text-[#9E9AA3]">Cancel any time from your dashboard. Set up in 5 minutes; the voice line is turned on for you within 2 business days. Secure checkout by Stripe. <a href="/plan" className="text-[#E5A93C]">Full details</a>.</p>
           {err && <p className="text-sm text-[#D96B43]">{err}</p>}
         </div>
       </div>

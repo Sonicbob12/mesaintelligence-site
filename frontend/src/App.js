@@ -9,6 +9,7 @@ import SmsPage from "@/pages/SmsPage";
 import AuditReportPage from "@/pages/AuditReportPage";
 import BookPage from "@/pages/BookPage";
 import PortalPage from "@/pages/PortalPage";
+import PlanPage from "@/pages/PlanPage";
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Route path="/audit/:id" element={<AuditReportPage />} />
           <Route path="/book" element={<BookPage />} />
           <Route path="/portal" element={<PortalPage />} />
+          <Route path="/plan" element={<PlanPage />} />
         </Routes>
       </BrowserRouter>
       <Toaster theme="dark" position="bottom-right" toastOptions={{

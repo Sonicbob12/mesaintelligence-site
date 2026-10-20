@@ -5,11 +5,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 const faqs = [
   {
     q: "What does this actually cost?",
-    a: "Every engagement starts with a fixed-price audit of your operation. You get a written scope, the build cost, and the monthly running cost before anything is built — no surprises, and no obligation to continue.",
+    a: "The listing audit is free. The full Pro report is $99, credited toward the plan. The Local Growth Plan — monthly re-audit, 24/7 chat agent, review requests, voice line — is $249 a month or $2,388 a year, cancel any time. Custom builds beyond that get a written scope and fixed price before anything is built. See /plan for details.",
   },
   {
     q: "How long until it's live in my business?",
-    a: "A chat or web agent can typically be live within a few weeks of the audit. Voice dispatch and CRM or calendar integrations take longer because we test them against your real workflow before customers ever touch them.",
+    a: "On the Local Growth Plan the chat agent and review requests are live within minutes of signing up; the voice line is turned on for you within 2 business days. Custom CRM or calendar integrations take longer because we test them against your real workflow before customers ever touch them.",
   },
   {
     q: "Will my staff need training?",

@@ -6,6 +6,7 @@ const links = [
   { label: "Services", href: "#services", testid: "nav-services-link" },
   { label: "Live Demo", href: "#demo", testid: "nav-demo-link" },
   { label: "Free Audit", href: "#audit", testid: "nav-audit-link" },
+  { label: "Pricing", href: "/plan", testid: "nav-pricing-link" },
   { label: "Process", href: "#process", testid: "nav-process-link" },
   { label: "Contact", href: "#contact", testid: "nav-contact-link" },
 ];
