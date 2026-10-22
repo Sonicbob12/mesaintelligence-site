@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import ChapterBadge from "@/components/ChapterBadge";
 import { ArrowUpRight, Loader2 } from "lucide-react";
+import SmsConsent, { SMS_CONSENT_TEXT } from "@/components/SmsConsent";
 
 const API = "/api";
 const industries = ["HVAC & Plumbing", "Restaurant & Cafe", "Dental & Medical", "Retail", "Legal & Professional", "Other Local Business"];
@@ -10,7 +11,7 @@ const industries = ["HVAC & Plumbing", "Restaurant & Cafe", "Dental & Medical", 
 const inputCls = "w-full bg-transparent border border-white/12 px-5 py-4 text-sm font-light placeholder:text-[#9E9AA3]/50 focus:outline-none focus:border-[#D96B43] transition-colors duration-300";
 
 export default function ContactFormSection() {
-  const blank = { name: "", email: "", phone: "", company: "", industry: "", message: "", website: "" };
+  const blank = { name: "", email: "", phone: "", company: "", industry: "", message: "", website: "", sms_consent: false };
   const [form, setForm] = useState(blank);
   const [sending, setSending] = useState(false);
 
@@ -28,12 +29,16 @@ export default function ContactFormSection() {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (form.sms_consent && form.phone.replace(/\D/g, "").length < 10) {
+      toast.error("Add your mobile number to get texts, or uncheck the text box.");
+      return;
+    }
     setSending(true);
     try {
       const res = await fetch(`${API}/leads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, sms_consent_text: form.sms_consent ? SMS_CONSENT_TEXT : "", source: "contact_form" }),
       });
       if (!res.ok) throw new Error();
       toast.success("Enquiry dispatched. We'll call you within one business day.");
@@ -75,7 +80,7 @@ export default function ContactFormSection() {
           <input type="text" name="website" value={form.website} onChange={set("website")} tabIndex={-1} autoComplete="off" aria-hidden="true" className="hidden" />
           <input required value={form.name} onChange={set("name")} data-testid="contact-form-name-input" placeholder="Your name" className={inputCls} />
           <input required type="email" value={form.email} onChange={set("email")} data-testid="contact-form-email-input" placeholder="Email address" className={inputCls} />
-          <input value={form.phone} onChange={set("phone")} data-testid="contact-form-phone-input" placeholder="Phone (optional)" className={inputCls} />
+          <input value={form.phone} onChange={set("phone")} data-testid="contact-form-phone-input" type="tel" placeholder="Mobile phone (optional)" className={inputCls} />
           <input required value={form.company} onChange={set("company")} data-testid="contact-form-company-input" placeholder="Business name" className={inputCls} />
           <select required value={form.industry} onChange={set("industry")} data-testid="contact-form-industry-select"
                   className={`${inputCls} sm:col-span-2 appearance-none ${form.industry ? "text-[#F5F3EF]" : "text-[#9E9AA3]/50"}`}>
@@ -85,6 +90,7 @@ export default function ContactFormSection() {
           <textarea required value={form.message} onChange={set("message")} data-testid="contact-form-message-textarea"
                     placeholder="What's the biggest operational headache right now?" rows={5}
                     className={`${inputCls} sm:col-span-2 resize-none`} />
+          <SmsConsent checked={form.sms_consent} onChange={(v) => setForm((f) => ({ ...f, sms_consent: v }))} />
           <button
             type="submit"
             data-testid="contact-form-submit-button"
