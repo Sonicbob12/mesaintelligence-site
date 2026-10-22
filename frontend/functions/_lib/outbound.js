@@ -328,14 +328,16 @@ export async function runDaily(env, { date = new Date(), limit, dryRun, timeBudg
 }
 
 // Follow-up: one bump, 4+ days after the first email, to anyone who hasn't booked, replied or unsubscribed.
-export async function runFollowups(env, { dryRun } = {}) {
+export async function runFollowups(env, { dryRun, timeBudgetMs } = {}) {
   if (!hasDB(env)) throw new Error("D1 not bound");
+  const deadline = Date.now() + Number(timeBudgetMs || 20000);
   const live = env.OUTBOUND_ENABLED === "1" && !dryRun;
   const cutoff = now() - Number(env.OUTBOUND_FOLLOWUP_DAYS || 4) * 86400;
   const { results } = await env.DB.prepare("SELECT o.*, a.share_key FROM outreach o LEFT JOIN audits a ON a.id = o.audit_id WHERE o.status = 'sent' AND o.sent_at <= ?1 ORDER BY o.sent_at ASC LIMIT ?2").bind(cutoff, Number(env.OUTBOUND_DAILY_CAP || 10)).all();
   const run = { id: id("run"), day: planFor(env).day, mode: "followups", found: results?.length || 0, emailed: 0, skipped: 0, followups: 0, errors: [], started_at: now() };
   const log = [];
   for (const o of results || []) {
+    if (Date.now() > deadline) { run.notes = "time budget reached — remaining follow-ups go out on the next run"; break; }
     if (await suppressed(env, o.email)) { await setStatus(env, o.id, "unsubscribed"); continue; }
     const links = { report: reportLink(env, o.audit_id, o.share_key), book: bookLink(env, o.audit_id, o.share_key, o.id), unsub: unsubLink(env, o.unsub_token) };
     const first = (o.subject || "").replace(/^re:\s*/i, "");
@@ -357,6 +359,21 @@ async function saveRun(env, run) {
 }
 
 // ---------- reporting ----------
+// Sends the day's digest once (guarded in rate_limits), so the noon tick can't double-send.
+export async function sendDigestOnce(env, date = new Date()) {
+  if (!hasDB(env)) return { sent: false, reason: "no db" };
+  const plan = planFor(env, date);
+  const key = `outbound-digest:${plan.day}`;
+  try {
+    const r = await env.DB.prepare("SELECT count FROM rate_limits WHERE k = ?").bind(key).first();
+    if (r) return { sent: false, reason: "already sent today" };
+  } catch {}
+  const s = await summary(env, 1);
+  const ok = await emailDigest(env, s, plan);
+  if (ok) { try { await env.DB.prepare("INSERT INTO rate_limits (k, window_start, count) VALUES (?1, ?2, 1) ON CONFLICT(k) DO UPDATE SET count = 1").bind(key, now()).run(); } catch {} }
+  return { sent: ok };
+}
+
 export async function summary(env, days = 1) {
   if (!hasDB(env)) return null;
   const since = now() - days * 86400;
