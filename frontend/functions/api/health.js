@@ -39,6 +39,7 @@ export async function onRequestGet({ env }) {
     plan_included_minutes: Number(env.PLAN_INCLUDED_MINUTES || 500),
     plan_overage_cents: Number(env.PLAN_OVERAGE_CENTS || 25),
     plan_overage_billing: env.PLAN_OVERAGE_BILLING !== "0",
+    plan_checkins: env.PLAN_CHECKINS !== "0",
     plan_setup_fee: Boolean(env.STRIPE_SETUP_PRICE_ID),
     plan_founding: Boolean(env.STRIPE_FOUNDING_PRICE_ID && env.FOUNDING_CODE),
     voice_auto_provision: Boolean(env.RETELL_API_KEY) && env.VOICE_AUTO_PROVISION !== "0",

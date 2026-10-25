@@ -125,7 +125,7 @@ export async function runUsageBilling(env, { limit = 50 } = {}) {
     out.checked += 1;
     try {
       const u = await usageFor(env, plan);
-      const state = { period_start: u.period.start, billed_minutes: u.billed_minutes, alerted: { ...u.alerted } };
+      const state = { ...safeJSON(plan.usage_json, {}), period_start: u.period.start, billed_minutes: u.billed_minutes, alerted: { ...u.alerted } }; // keeps trial.js's checkins
       let changed = false;
       for (const level of [80, 100]) {
         if (u.pct >= level && !state.alerted[level]) {
