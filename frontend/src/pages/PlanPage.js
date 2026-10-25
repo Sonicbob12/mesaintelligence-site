@@ -24,7 +24,7 @@ const TIERS = [
   {
     name: "Local Growth Plan", featured: true, price: "$249", per: "/ month", alt: "or $2,388 / year ($199 / mo)",
     blurb: "Fixed for you — and kept fixed. Runs every month without you touching it.",
-    items: ["Everything in the Pro report, re-run monthly with a \"what changed\" email", "24/7 chat agent on your website that answers questions, books, and emails you every lead", "One-tap review requests to customers after each job", "A voice line that answers after-hours calls and books the job", "Your fix-it list worked month by month, with the score to prove it", "Private dashboard: hours, services, review link, widget, billing", "Cancel any time"],
+    items: ["Everything in the Pro report, re-run monthly with a \"what changed\" email", "24/7 chat agent on your website that answers questions, books, and emails you every lead", "One-tap review requests to customers by text or email after each job", "A voice line that answers after-hours calls, books the job and texts the customer a confirmation", "A text reminder the day before every appointment, so fewer no-shows", "Your fix-it list worked month by month, with the score to prove it", "Private dashboard: hours, services, review link, widget, billing", "Cancel any time"],
   },
 ];
 

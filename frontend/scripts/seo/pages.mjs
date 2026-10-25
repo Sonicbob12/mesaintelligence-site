@@ -19,8 +19,9 @@ export const SITE = {
 // Shared building blocks (kept factual and identical to what the product does).
 const PLAN_BULLETS = [
   "A 24/7 chat agent on your website that answers questions, books appointments and emails you every lead",
-  "A voice line that answers your calls 24/7, books appointments and emails you a summary of every call",
-  "One-tap review requests to customers after each job",
+  "A voice line that answers your calls 24/7, books appointments, texts the customer a confirmation and emails you a summary of every call",
+  "A text reminder to your customer the day before every appointment, so fewer no-shows",
+  "One-tap review requests to customers by text or email after each job",
   "A monthly re-audit of your Google listing, website and search rank, with a “what changed” email",
   "A private dashboard for hours, services, your review link, the website widget and billing",
 ];

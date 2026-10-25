@@ -6,9 +6,10 @@ const primary = "font-mono text-[11px] uppercase tracking-[0.2em] px-6 py-4 bg-[
 const ghost = "font-mono text-[11px] uppercase tracking-[0.2em] px-6 py-4 border border-white/15 hover:border-[#E5A93C] transition-colors disabled:opacity-40 flex items-center justify-center gap-2";
 const FEATURES = [
   "Monthly re-audit of your listing, website and search rank — with a 'what changed' email",
-  "One-tap review requests to customers after every job",
+  "One-tap review requests to customers by text or email after every job",
   "A 24/7 chat agent on your website that answers, books and emails you every lead",
-  "A voice line that answers after-hours calls and books the job",
+  "A voice line that answers after-hours calls, books the job and texts the customer a confirmation",
+  "A text reminder the day before every appointment, so fewer no-shows",
   "Your fix-it list worked month by month, with the score to prove it",
 ];
 
