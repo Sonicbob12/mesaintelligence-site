@@ -179,11 +179,34 @@ function Dashboard({ d, t, setD, welcome }) {
           <div className={`${label} mb-3`}>Your AI phone line</div>
           {d.tenant?.voice ? <p className="text-sm">Live on <span className="text-[#F5F3EF]">{d.tenant.voice_number}</span>. Call it to hear it. To put it to work, forward your business line to it when you can't answer: on most carriers dial <span className="text-[#F5F3EF]">*72</span> then the number (dial <span className="text-[#F5F3EF]">*73</span> to turn it off), or set "forward when busy / no answer" in your phone's call settings.</p>
             : <p className="text-sm text-[#9E9AA3]">Being set up — if your number isn't here within the hour, Bobby is finishing it by hand and will email it today.</p>}
+          {d.usage && <Minutes u={d.usage} calls={d.calls} />}
           <div className={`${label} mt-6 mb-2`}>Settings</div>
           <p className="text-sm text-[#9E9AA3]">Bookings & leads go to <span className="text-[#F5F3EF]">{d.tenant?.notify_email}</span>. To change hours, services or the review link, reply to any Mesa email or write <a href="mailto:hello@mesaintelligence.ai" className="text-[#E5A93C]">hello@mesaintelligence.ai</a>.</p>
         </div>
       </div>
       <p className="text-xs text-[#9E9AA3]">Member since {fmtDate(p.created_at)} · Questions: hello@mesaintelligence.ai · (575) 254-1185</p>
+    </div>
+  );
+}
+
+// Voice minutes this billing period: used vs included, with the overage rule spelled out.
+function Minutes({ u, calls }) {
+  const pct = Math.min(100, u.included ? (u.minutes / u.included) * 100 : 0);
+  const over = u.minutes > u.included;
+  const rate = `$${(u.rate_cents / 100).toFixed(2)}`;
+  return (
+    <div className="mt-6" data-testid="portal-minutes">
+      <div className="flex items-baseline justify-between mb-2">
+        <span className={label}>Voice minutes</span>
+        <span className="text-xs text-[#9E9AA3]">resets {fmtDate(u.period.end)}</span>
+      </div>
+      <div className="text-2xl font-light"><span className={over ? "text-[#E5A93C]" : "text-[#F5F3EF]"}>{u.minutes}</span><span className="text-[#9E9AA3] text-base"> / {u.included} min · {u.calls} call{u.calls === 1 ? "" : "s"}</span></div>
+      <div className="h-1.5 bg-white/8 mt-3 overflow-hidden"><div className={`h-full ${over ? "bg-[#E5A93C]" : pct >= 80 ? "bg-[#D96B43]" : "bg-[#8EA89D]"}`} style={{ width: `${pct}%` }} /></div>
+      <p className="text-xs text-[#9E9AA3] mt-2">
+        {over ? `${u.overage} min over the allowance${u.trialing ? " — free during your trial" : ` → $${u.overage_usd.toFixed(2)} on your next invoice`}.` : `Past ${u.included} the line keeps answering; extra minutes are ${rate} each${u.trialing ? " (free during your trial)" : ""}.`}
+        {" "}Each call rounds up to the next minute.
+      </p>
+      {calls?.length > 0 && <div className="mt-3 text-xs text-[#9E9AA3] space-y-0.5">{calls.slice(0, 5).map((c) => <div key={c.call_id}>{new Date(c.started_at * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {c.from_number || (c.kind === "web_call" ? "web" : "—")} · {c.minutes} min</div>)}</div>}
     </div>
   );
 }

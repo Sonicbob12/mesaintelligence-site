@@ -21,6 +21,7 @@ import { tenantToRow } from "./tenants.js";
 import { sendSms, twilioConfigured, toE164 } from "./twilio.js";
 import { provisionVoiceLine, retell } from "./retell.js";
 import { hasDB, id, now, safeJSON } from "./db.js";
+import { ensureUsageSchema, periodFromSubscription } from "./usage.js";
 
 export const planConfigured = (env) => Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PLAN_PRICE_ID);
 export const planPrice = (env) => Number(env.PLAN_PRICE_USD || 249);
@@ -149,8 +150,10 @@ export async function updatePlanFromSubscription(env, sub) {
   if (!hasDB(env) || !sub?.id) return;
   const status = sub.status === "active" || sub.status === "trialing" ? "active" : sub.status === "past_due" || sub.status === "unpaid" ? "past_due" : sub.status === "canceled" || sub.status === "incomplete_expired" ? "canceled" : sub.status;
   const price = sub.items?.data?.[0]?.price;
-  await env.DB.prepare("UPDATE plans SET status = ?2, price_id = COALESCE(?3, price_id), interval = COALESCE(?4, interval), stripe_customer = COALESCE(stripe_customer, ?5), updated_at = ?6 WHERE stripe_subscription = ?1")
-    .bind(sub.id, status, price?.id || null, price?.recurring?.interval || null, sub.customer || null, now()).run();
+  await ensureUsageSchema(env);
+  const per = periodFromSubscription(sub); // billing period + trial end drive the minute allowance (usage.js)
+  await env.DB.prepare("UPDATE plans SET status = ?2, price_id = COALESCE(?3, price_id), interval = COALESCE(?4, interval), stripe_customer = COALESCE(stripe_customer, ?5), period_start = COALESCE(?7, period_start), period_end = COALESCE(?8, period_end), trial_end = ?9, updated_at = ?6 WHERE stripe_subscription = ?1")
+    .bind(sub.id, status, price?.id || null, price?.recurring?.interval || null, sub.customer || null, now(), per.start, per.end, per.trial_end).run();
   if (status === "canceled") {
     const p = await env.DB.prepare("SELECT tenant_id FROM plans WHERE stripe_subscription = ?").bind(sub.id).first();
     if (p?.tenant_id) {

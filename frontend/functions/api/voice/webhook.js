@@ -7,6 +7,7 @@ import { insertLead, saveConversation, loadConversation, now } from "../../_lib/
 import { runWorkflow } from "../../_lib/workflow.js";
 import { json } from "../../_lib/http.js";
 import { tenantForCall } from "./tool.js";
+import { recordCallUsage } from "../../_lib/usage.js";
 
 export async function onRequestPost({ request, env, waitUntil }) {
   const raw = await request.text();
@@ -17,6 +18,9 @@ export async function onRequestPost({ request, env, waitUntil }) {
 
   const tenant = await tenantForCall(env, call);
   if (!tenant) return json({ ok: true });
+
+  // Minutes count on both events: call_ended has the duration first, call_analyzed just confirms it.
+  await recordCallUsage(env, tenant, call).catch((e) => console.error("call usage", e?.message || e));
 
   // Transcript → conversation messages (plain text turns).
   const messages = [];

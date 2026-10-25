@@ -8,6 +8,7 @@ import { planByToken, planBySession, saveOnboarding, sendReviewRequest, reviewRe
 import { historyFor, loadAudit } from "../../_lib/audit.js";
 import { reportLink } from "../../_lib/audit_pro.js";
 import { hasDB, hit, safeJSON } from "../../_lib/db.js";
+import { usageFor, recentCalls } from "../../_lib/usage.js";
 import { clientIp, json, readJSON } from "../../_lib/http.js";
 
 async function view(env, plan) {
@@ -20,6 +21,8 @@ async function view(env, plan) {
     history: await historyFor(env, plan.place_id),
     last_report: last ? reportLink(env, last.id, last.share_key) : null,
     reviews: await reviewRequests(env, plan.id),
+    usage: await usageFor(env, plan).catch(() => null),
+    calls: await recentCalls(env, plan).catch(() => []),
     widget: t ? `<script src="${site}/widget.js" data-tenant="${t.id}" defer></script>` : null,
     sms_enabled: Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_FROM),
   };

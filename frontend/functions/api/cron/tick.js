@@ -5,6 +5,7 @@ import { sendDueReminders, sendDigests } from "../../_lib/workflow.js";
 import { listTenants, loadTenant } from "../../_lib/tenants.js";
 import { json } from "../../_lib/http.js";
 import { runMonthlyAudits } from "../../_lib/plan.js";
+import { runUsageBilling } from "../../_lib/usage.js";
 import { runDaily, planFor, sendDigestOnce } from "../../_lib/outbound.js";
 import { localDate } from "../../_lib/time.js";
 
@@ -15,6 +16,8 @@ export async function onRequest({ request, env, waitUntil }) {
   const reminders = await sendDueReminders(env, loadTenant).catch((e) => ({ error: String(e?.message || e) }));
   const digests = await sendDigests(env, await listTenants(env)).catch((e) => ({ error: String(e?.message || e) }));
   const plans = await runMonthlyAudits(env).catch((e) => ({ error: String(e?.message || e) }));
+  // Voice minutes: 80%/100% alerts and overage invoice items for plans past their allowance (usage.js).
+  const usage = await runUsageBilling(env).catch((e) => ({ error: String(e?.message || e) }));
   // Outbound top-up: if the 7:05 run didn't reach the daily cap, keep going on the 8 AM–3 PM ticks (weekday
   // categories only). Runs in the background so cron-job.org's 30 s timeout can't cut it off. This invocation has
   // already spent requests on reminders/digests/audits, so the outbound share gets a smaller request budget.
@@ -31,5 +34,5 @@ export async function onRequest({ request, env, waitUntil }) {
   let digest = null;
   const digestHour = Number(env.OUTBOUND_DIGEST_HOUR || lastTopUp + 1);
   if (env.OUTBOUND_ENABLED === "1" && hour >= digestHour && hour <= digestHour + 2 && plan.mode !== "off") digest = await bg(sendDigestOnce(env));
-  return json({ ok: true, at: new Date().toISOString(), reminders, digests, plans, outbound, digest });
+  return json({ ok: true, at: new Date().toISOString(), reminders, digests, plans, usage, outbound, digest });
 }
