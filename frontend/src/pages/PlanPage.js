@@ -23,14 +23,16 @@ const TIERS = [
   },
   {
     name: "Local Growth Plan", featured: true, price: "$249", per: "/ month", alt: "or $2,388 / year ($199 / mo)",
-    blurb: "Fixed for you — and kept fixed. Runs every month without you touching it.",
-    items: ["Everything in the Pro report, re-run monthly with a \"what changed\" email", "24/7 chat agent on your website that answers questions, books, and emails you every lead", "One-tap review requests to customers by text or email after each job", "A voice line that answers after-hours calls, books the job and texts the customer a confirmation", "A text reminder the day before every appointment, so fewer no-shows", "Your fix-it list worked month by month, with the score to prove it", "Private dashboard: hours, services, review link, widget, billing", "Cancel any time"],
+    blurb: "An AI phone line that answers when you can't, plus everything that gets you found. Free for 14 days.",
+    items: ["A phone line that answers 24/7, books the job into your hours, texts the customer a confirmation and emails you a summary of every call — live the minute you sign up", "500 voice minutes a month included", "A text reminder the day before every appointment, so fewer no-shows", "24/7 chat agent on your website that answers questions, books, and emails you every lead", "One-tap review requests to customers by text or email after each job", "Everything in the Pro report, re-run monthly with a \"what changed\" email", "Private dashboard: hours, services, review link, widget, billing", "Cancel any time"],
   },
 ];
 
 const FAQ = [
-  ["Who is this for?", "Owner-run local businesses — HVAC, plumbers, dentists, law offices, restaurants, salons, auto shops — in Las Cruces, El Paso and anywhere else people search Google before they call."],
-  ["What happens after I subscribe?", "Within a minute you get a welcome email with your private dashboard. Five minutes there (hours, services, your Google review link) and the chat agent and review requests are live. The voice line is set up for you within 2 business days."],
+  ["Who is this for?", "Owner-run trades businesses — HVAC, plumbing, electrical, roofing, landscaping, small contractors — in southern New Mexico and West Texas, where the owner is on a job site and the phone rings anyway. Other local businesses are welcome; the trades are where it pays for itself fastest."],
+  ["What happens after I subscribe?", "Within a minute you get a welcome email with your private dashboard and your new phone number, already answering. Call it and hear it. Then forward your business line to it when you can't answer (your carrier's *72 code, or conditional forwarding in your phone settings). Five minutes in the dashboard (hours, services, your Google review link) and the chat agent and review requests are live too."],
+  ["How does the free trial work?", "14 days free, card on file. Your line is live the whole time. If it hasn't caught a call you'd have missed, cancel from your dashboard before day 14 and you pay nothing. Monthly plans add a one-time $299 setup fee at the end of the trial; yearly plans waive it."],
+  ["What about minutes?", "500 voice minutes a month are included, which covers most owner-run shops. Past that it's $0.25 a minute, billed monthly. Your dashboard shows the count."],
   ["Do I need a new website?", "No. The chat agent is one line of code on your existing site, and most listing fixes happen in Google Business Profile. If your site is the problem, the plan tells you exactly what to change — or we quote a rebuild separately."],
   ["Is there a contract?", "No. Month to month, cancel from your dashboard. Yearly is cheaper if you want it."],
   ["What does the $99 Pro report credit mean?", "If you bought the Pro report first, $99 comes off your first plan payment automatically at checkout."],
@@ -41,6 +43,7 @@ export default function PlanPage() {
   const [h, setH] = useState(null);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [code, setCode] = useState(() => { try { return new URLSearchParams(window.location.search).get("code") || ""; } catch { return ""; } });
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   useEffect(() => { fetch("/api/health").then((r) => r.json()).then(setH).catch(() => {}); window.scrollTo(0, 0); }, []);
@@ -50,7 +53,7 @@ export default function PlanPage() {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setErr("Enter your email to start — your dashboard link goes there."); return; }
     setBusy(interval); setErr("");
     try {
-      const res = await fetch("/api/plan/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, name, interval }) });
+      const res = await fetch("/api/plan/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, name, interval, code: code || undefined }) });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.detail || "Couldn't start checkout.");
       window.location.href = d.url;
@@ -70,10 +73,10 @@ export default function PlanPage() {
       <section className="px-6 sm:px-12 lg:px-20 pt-16 sm:pt-24 pb-10">
         <div className={label + " mb-4"}>Pricing</div>
         <h1 className="font-display text-4xl sm:text-6xl font-light tracking-tight leading-[1.02] max-w-3xl">
-          Show up first. <span className="font-serif-accent italic text-[#D96B43]">Answer</span> first. Get the job.
+          Never miss <span className="font-serif-accent italic text-[#D96B43]">the call</span> that pays for the month.
         </h1>
         <p className="text-[#9E9AA3] font-light max-w-xl mt-6">
-          Three steps, each one optional. Start free, see your numbers, and only pay when the plan is doing the work for you.
+          An AI phone line that answers when you're on a job, books the work and texts the customer. Try it free for 14 days on a number you can call right now. Start with the free audit if you'd rather see your numbers first.
         </p>
       </section>
 
@@ -94,10 +97,11 @@ export default function PlanPage() {
                   <>
                     <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Business name" className={inputCls} />
                     <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (your dashboard link goes here)" className={inputCls} data-testid="plan-email" />
-                    <button onClick={() => go("month")} disabled={Boolean(busy)} className={primary} data-testid="plan-monthly">{busy === "month" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Start the plan — ${monthly}/month</button>
-                    <button onClick={() => go("year")} disabled={Boolean(busy)} className={ghost} data-testid="plan-annual">{busy === "year" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Pay yearly — ${annual}</button>
+                    {code && h?.plan_founding && <p className="text-xs text-[#E5A93C]">Founding-client pricing applied: $149/month for your first 6 months, no setup fee.</p>}
+                    <button onClick={() => go("month")} disabled={Boolean(busy)} className={primary} data-testid="plan-monthly">{busy === "month" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {h?.plan_trial_days ? `Start free for ${h.plan_trial_days} days` : `Start the plan — $${monthly}/month`}</button>
+                    <button onClick={() => go("year")} disabled={Boolean(busy)} className={ghost} data-testid="plan-annual">{busy === "year" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Pay yearly — ${annual} (no setup fee)</button>
                     {err && <p className="text-sm text-[#D96B43]">{err}</p>}
-                    <p className="text-[11px] text-[#9E9AA3]">Secure checkout by Stripe. Cancel any time from your dashboard.</p>
+                    <p className="text-[11px] text-[#9E9AA3]">{h?.plan_trial_days ? `Card on file, nothing charged for ${h.plan_trial_days} days. Then $${monthly}/month${h?.plan_setup_fee && !(code && h?.plan_founding) ? " plus a one-time $299 setup" : ""}.` : "Secure checkout by Stripe."} Cancel any time from your dashboard.</p>
                   </>
                 )}
               </div>

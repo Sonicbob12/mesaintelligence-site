@@ -141,7 +141,7 @@ function Dashboard({ d, t, setD, welcome }) {
         <span className={`font-mono text-[10px] uppercase tracking-[0.2em] px-2 py-1 border ${p.status === "active" ? "border-[#8EA89D] text-[#8EA89D]" : "border-[#D96B43] text-[#D96B43]"}`}>{p.status}</span>
         <button onClick={billing} disabled={busy === "billing"} className="ml-auto text-xs text-[#9E9AA3] hover:text-[#E5A93C] flex items-center gap-1">Billing & invoices <ExternalLink className="w-3 h-3" /></button>
       </div>
-      {welcome && <div className="border border-[#8EA89D]/50 bg-[#8EA89D]/[0.05] p-5 text-sm">You're all set. Bookmark this page — it's your private dashboard. Bobby will be in touch within 2 business days to turn on your voice line.</div>}
+      {welcome && <div className="border border-[#8EA89D]/50 bg-[#8EA89D]/[0.05] p-5 text-sm">You're all set. Bookmark this page — it's your private dashboard. Your phone line is below: call it, then forward your business line to it when you can't answer.</div>}
 
       <div className="grid md:grid-cols-12 gap-6">
         <div className={`${card} md:col-span-5`}>
@@ -176,9 +176,9 @@ function Dashboard({ d, t, setD, welcome }) {
           </div>
         </div>
         <div className={card}>
-          <div className={`${label} mb-3`}>Voice line & missed-call text-back</div>
-          {d.tenant?.voice ? <p className="text-sm">Live on <span className="text-[#F5F3EF]">{d.tenant.voice_number}</span>. Forward your business line to it when you can't answer.</p>
-            : <p className="text-sm text-[#9E9AA3]">Being set up — Bobby will email you a number to forward missed calls to within 2 business days.</p>}
+          <div className={`${label} mb-3`}>Your AI phone line</div>
+          {d.tenant?.voice ? <p className="text-sm">Live on <span className="text-[#F5F3EF]">{d.tenant.voice_number}</span>. Call it to hear it. To put it to work, forward your business line to it when you can't answer: on most carriers dial <span className="text-[#F5F3EF]">*72</span> then the number (dial <span className="text-[#F5F3EF]">*73</span> to turn it off), or set "forward when busy / no answer" in your phone's call settings.</p>
+            : <p className="text-sm text-[#9E9AA3]">Being set up — if your number isn't here within the hour, Bobby is finishing it by hand and will email it today.</p>}
           <div className={`${label} mt-6 mb-2`}>Settings</div>
           <p className="text-sm text-[#9E9AA3]">Bookings & leads go to <span className="text-[#F5F3EF]">{d.tenant?.notify_email}</span>. To change hours, services or the review link, reply to any Mesa email or write <a href="mailto:hello@mesaintelligence.ai" className="text-[#E5A93C]">hello@mesaintelligence.ai</a>.</p>
         </div>

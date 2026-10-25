@@ -24,12 +24,27 @@ import { hasDB, id, now } from "./db.js";
 import { localDate } from "./time.js";
 
 const TZ = "America/Denver";
-export const SCHEDULE = {
-  mon: { key: "hvac", label: "HVAC", noun: "HVAC contractor", plural: "HVAC companies", match: /hvac|heating|air|cool|furnace|refrigera|mechanical/i, search: "HVAC contractor", queries: ["HVAC contractor", "air conditioning repair", "heating and cooling service", "refrigerated air installation", "furnace repair"], angle: "missed calls and after-hours dispatch — every call that rings out is a service ticket somebody else gets" },
-  tue: { key: "restaurant", label: "Restaurants", noun: "restaurant", plural: "restaurants", match: /restaurant|cafe|café|grill|bar\b|diner|steak|pizza|taco|food|bistro|eatery|coffee|bakery|kitchen|cantina|brewery|bbq|barbecue/i, search: "restaurant", queries: ["restaurant", "mexican restaurant", "family restaurant", "steakhouse", "cafe", "bar and grill"], angle: "hosting and reservations — people decide where to eat from the listing, the photos and whether they can book in two taps" },
-  wed: { key: "dental", label: "Dental", noun: "dentist", plural: "dental offices", match: /dent|orthodont|endodont|periodont|oral|smile/i, search: "dentist", queries: ["dentist", "dental clinic", "family dentistry", "orthodontist", "pediatric dentist", "cosmetic dentist"], angle: "new-patient intake — the practice that answers first and books online wins the patient" },
-  thu: { key: "legal", label: "Legal", noun: "attorney", plural: "law firms", match: /law|attorney|lawyer|legal/i, search: "law firm", queries: ["law firm", "personal injury lawyer", "family law attorney", "criminal defense attorney", "immigration lawyer", "estate planning attorney"], angle: "client intake — a potential client who can't reach you in the first hour calls the next firm on the list" },
+// Categories. Mon–Thu default to the trades (OUTBOUND_SCHEDULE="hvac,plumbing,electrical,roofing" overrides the
+// weekday order; any key from CATEGORIES). The non-trade categories stay available but are off the default schedule.
+export const CATEGORIES = {
+  hvac: { key: "hvac", label: "HVAC", noun: "HVAC contractor", plural: "HVAC companies", match: /hvac|heating|air|cool|furnace|refrigera|mechanical/i, search: "HVAC contractor", queries: ["HVAC contractor", "air conditioning repair", "heating and cooling service", "refrigerated air installation", "furnace repair"], angle: "after-hours and on-the-job calls — every call that rings out on a hot afternoon is a service ticket somebody else gets" },
+  plumbing: { key: "plumbing", label: "Plumbing", noun: "plumber", plural: "plumbing companies", match: /plumb|rooter|drain|sewer|water heater|gas line/i, search: "plumber", queries: ["plumber", "plumbing company", "drain cleaning", "water heater repair", "emergency plumber"], angle: "emergency calls — a burst pipe at 9 PM goes to whoever answers, and the customer never calls the second number" },
+  electrical: { key: "electrical", label: "Electrical", noun: "electrician", plural: "electrical contractors", match: /electric|wiring|lighting/i, search: "electrician", queries: ["electrician", "electrical contractor", "residential electrician", "commercial electrician", "electrical repair"], angle: "calls that come in while you're on a ladder — the ones that ring out become the other guy's estimate" },
+  roofing: { key: "roofing", label: "Roofing", noun: "roofing contractor", plural: "roofing companies", match: /roof|gutter|siding|stucco/i, search: "roofing contractor", queries: ["roofing contractor", "roof repair", "roofing company", "stucco contractor", "gutter installation"], angle: "storm-week calls — after a hail or wind day the phone rings for three days and every missed one is a roof somebody else sells" },
+  landscaping: { key: "landscaping", label: "Landscaping", noun: "landscaping company", plural: "landscaping companies", match: /landscap|lawn|tree|irrigat|yard|xeriscap|sprinkler/i, search: "landscaping company", queries: ["landscaping company", "landscaper", "lawn care service", "tree service", "irrigation repair"], angle: "spring and fall call volume — owners are on the mower, the phone rings in the truck, and the estimate goes to whoever picked up" },
+  contractor: { key: "contractor", label: "Contractors", noun: "general contractor", plural: "contractors", match: /contract|construct|remodel|handyman|builder|concrete|paving|fence|painting|garage door/i, search: "general contractor", queries: ["general contractor", "remodeling contractor", "concrete contractor", "fence company", "handyman service", "painting contractor"], angle: "estimate requests — homeowners call three contractors and go with the first one who answers and shows up" },
+  restaurant: { key: "restaurant", label: "Restaurants", noun: "restaurant", plural: "restaurants", match: /restaurant|cafe|café|grill|bar\b|diner|steak|pizza|taco|food|bistro|eatery|coffee|bakery|kitchen|cantina|brewery|bbq|barbecue/i, search: "restaurant", queries: ["restaurant", "mexican restaurant", "family restaurant", "steakhouse", "cafe", "bar and grill"], angle: "hosting and reservations — people decide where to eat from the listing, the photos and whether they can book in two taps" },
+  dental: { key: "dental", label: "Dental", noun: "dentist", plural: "dental offices", match: /dent|orthodont|endodont|periodont|oral|smile/i, search: "dentist", queries: ["dentist", "dental clinic", "family dentistry", "orthodontist", "pediatric dentist", "cosmetic dentist"], angle: "new-patient intake — the practice that answers first and books online wins the patient" },
+  legal: { key: "legal", label: "Legal", noun: "attorney", plural: "law firms", match: /law|attorney|lawyer|legal/i, search: "law firm", queries: ["law firm", "personal injury lawyer", "family law attorney", "criminal defense attorney", "immigration lawyer", "estate planning attorney"], angle: "client intake — a potential client who can't reach you in the first hour calls the next firm on the list" },
 };
+const DEFAULT_WEEK = ["hvac", "plumbing", "electrical", "roofing"]; // Mon–Thu; landscaping + contractor rotate in via OUTBOUND_SCHEDULE
+function weekSchedule(env) {
+  const keys = String(env.OUTBOUND_SCHEDULE || "").split(",").map((k) => k.trim()).filter((k) => CATEGORIES[k]);
+  const list = keys.length ? keys : DEFAULT_WEEK;
+  return { mon: list[0 % list.length], tue: list[1 % list.length], wed: list[2 % list.length], thu: list[3 % list.length] };
+}
+// Kept for older callers (admin panel): the default Mon–Thu map.
+export const SCHEDULE = { mon: CATEGORIES.hvac, tue: CATEGORIES.plumbing, wed: CATEGORIES.electrical, thu: CATEGORIES.roofing };
 const C = (latitude, longitude) => ({ latitude, longitude });
 const N = (query, lat, lng) => ({ query, center: C(lat, lng) });
 // local: Bobby can honestly say "here in <area>". tz: the market's own time zone (sends happen ~7–4 Mountain).
@@ -57,8 +72,10 @@ export const MARKETS = {
   "san-angelo": { key: "san-angelo", label: "San Angelo", query: "San Angelo, TX", center: C(31.4638, -100.437), local: null, nearby: [] },
 };
 // 21 entries (odd, so every market meets every weekday category over time). Home markets 3× each.
-export const ROTATION = ["las-cruces", "albuquerque", "midland", "el-paso", "phoenix", "santa-fe", "las-cruces", "tucson", "roswell", "el-paso",
-  "lubbock", "alamogordo", "las-cruces", "rio-rancho", "odessa", "el-paso", "farmington", "san-angelo", "deming", "silver-city", "t-or-c"];
+// Home markets 4× each per 19-day cycle, the rest of southern NM + West Texas once, ABQ/Santa Fe once (they're a
+// 3–4 hour drive). Phoenix/Tucson/Farmington/Rio Rancho stay defined for OUTBOUND_MARKETS but are off by default.
+export const ROTATION = ["midland", "deming", "lubbock", "roswell", "las-cruces", "el-paso", "las-cruces", "alamogordo", "el-paso", "odessa",
+  "las-cruces", "silver-city", "el-paso", "albuquerque", "las-cruces", "t-or-c", "el-paso", "san-angelo", "santa-fe"];
 // Optional override: OUTBOUND_MARKETS = comma list of market keys to rotate through instead.
 function rotation(env) {
   const list = String(env.OUTBOUND_MARKETS || "").split(",").map((x) => x.trim()).filter((k) => MARKETS[k]);
@@ -79,7 +96,8 @@ export function planFor(env, date = new Date()) {
   const rot = rotation(env);
   const city = MARKETS[rot[((dayIdx % rot.length) + rot.length) % rot.length]];
   const overflow = [1, 2].map((k) => MARKETS[rot[(dayIdx + k) % rot.length]]).filter((m) => m && m.key !== city.key);
-  const cat = SCHEDULE[d.weekday] || null;
+  const catKey = weekSchedule(env)[d.weekday];
+  const cat = catKey ? CATEGORIES[catKey] : null;
   return { day: d.iso, weekday: d.weekday, week: weeks + 1, dayIdx, city, overflow, category: cat, mode: cat ? "daily" : d.weekday === "fri" ? "followups" : "off" };
 }
 
@@ -228,11 +246,12 @@ export async function composeEmail(env, { plan, biz, audit, links }) {
     biggest_problems: top.map((i) => `${i.label}: ${i.detail}`),
     has_website: audit.hasWebsite, website_score: audit.websiteScore,
     industry_angle: plan.category.angle,
+    offer: `An AI phone line that answers when the owner can't (nights, weekends, on a job), books the work into their calendar, texts the customer a confirmation, and emails the owner a summary of every call. Free for ${env.PLAN_TRIAL_DAYS ?? 14} days on a number they can call right now; if it hasn't caught a job they'd have missed, they owe nothing. After that $${env.PLAN_PRICE_USD || 249}/month, cancel any time.`,
   };
   const system = [
-    "You write short cold emails for Bobby Lloyd, founder of Mesa Intelligence, a Las Cruces NM firm that builds practical AI (missed-call answering, online booking, review requests) for local businesses.",
-    "Write to the owner of a business about a free audit Bobby just ran on their Google listing. Follow bobby_location exactly when describing where Bobby is. Plain text. 70-110 words. No subject line in the body. No bullet points, no markdown, no exclamation marks, no hype words (game-changer, skyrocket, unlock).",
-    "Structure: 1) one sentence that states their most striking real number (rank or reviews gap) — specific, not flattering. 2) one sentence on what it costs them, tied to the industry_angle. 3) one sentence: who Bobby is (per bobby_location) and the full report is normally $99, but it's free if they book a 15-minute call — then the placeholder {BOOK_LINK}. 4) one line sign-off: Bobby. Mention the free summary with the placeholder {REPORT_LINK} once, naturally.",
+    "You write short cold emails for Bobby Lloyd, founder of Mesa Intelligence in Las Cruces NM. Bobby ran a landscaping company and works in construction; he builds an AI phone line for trades businesses. Follow bobby_location exactly when describing where Bobby is.",
+    "Write to the owner. Plain text. 80-120 words. No subject line in the body. No bullet points, no markdown, no exclamation marks, no hype words (game-changer, skyrocket, unlock, revolutionize). Sound like a tradesman who built something useful, not a marketer.",
+    "Structure: 1) one sentence with their most striking real number from the audit (rank, reviews gap, or no website) — specific, not flattering; mention the free summary once with the placeholder {REPORT_LINK}. 2) one sentence on what that costs them in missed calls, in the words of industry_angle. 3) two sentences on the offer: what the line does and the free trial, taken from `offer` — then the placeholder {BOOK_LINK} as the way to start (a 15-minute call where Bobby sets it up on a number they can hear). 4) one line: who Bobby is (per bobby_location, mention he ran a landscaping company). 5) sign-off: Bobby.",
     "Use only the facts given. Never invent numbers. If rank.position is null say they do not appear in the top 20 for that search.",
     'Respond with JSON only: {"subject": "max 7 words, specific, lowercase except names, no clickbait", "body": "the email with {REPORT_LINK} and {BOOK_LINK} placeholders"}',
   ].join("\n");
@@ -249,7 +268,8 @@ export async function composeEmail(env, { plan, biz, audit, links }) {
     subject = subject || `${biz.name} — ${rank?.position ? `#${rank.position}` : "not in the top 20"} for "${rank?.label || plan.category.search}"`;
     const mk = MARKETS[biz.market] || plan.city;
     const who = mk.local ? `I run Mesa Intelligence ${mk.local}` : "I run Mesa Intelligence out of Las Cruces, NM";
-    body = `Hi,\n\nI ran a quick audit on ${biz.name}'s Google listing this morning: ${r}${audit.competitors.medianReviews ? `, with ${audit.place.reviewCount} reviews against a local median of ${audit.competitors.medianReviews}` : ""}. The free summary is here: {REPORT_LINK}\n\nFor a ${plan.category.label.toLowerCase()} business that mostly comes down to ${plan.category.angle.split(" — ")[0]}.\n\n${who}. The full report is normally $99, but it's free if you book a 15-minute call with me: {BOOK_LINK}\n\nBobby`;
+    const trial = env.PLAN_TRIAL_DAYS ?? 14;
+    body = `Hi,\n\nI ran a quick audit on ${biz.name}'s Google listing this morning: ${r}${audit.competitors.medianReviews ? `, with ${audit.place.reviewCount} reviews against a local median of ${audit.competitors.medianReviews}` : ""}. The free summary is here: {REPORT_LINK}\n\nFor ${plan.category.plural} the bigger leak is usually ${plan.category.angle.split(" — ")[0]}.\n\nI built an AI phone line for that: it answers when you can't, books the job into your calendar, texts the customer a confirmation and emails you a summary of every call. It's free for ${trial} days on a number you can call right now, and if it hasn't caught a job you'd have missed, you owe nothing. Fifteen minutes and I'll have it live for you: {BOOK_LINK}\n\n${who}. I ran a landscaping company before this, so I know what the phone does when you're on a job.\n\nBobby`;
   }
   body = body.replace(/\{REPORT_LINK\}/g, links.report).replace(/\{BOOK_LINK\}/g, links.book);
   const footer = `\n\n—\nBobby Lloyd · Mesa Intelligence LLC · ${env.OUTBOUND_POSTAL_ADDRESS || "Las Cruces, NM"} · (575) 254-1185\nNot interested? ${links.unsub} and you won't hear from me again.`;
@@ -305,6 +325,20 @@ export async function suppress(env, email, reason) {
   if (!hasDB(env) || !email) return;
   await env.DB.prepare("INSERT OR REPLACE INTO suppression (email, reason, at) VALUES (?1, ?2, ?3)").bind(email.toLowerCase(), reason, now()).run();
   await env.DB.prepare("UPDATE outreach SET status = 'unsubscribed', updated_at = ?2 WHERE lower(email) = ?1 AND status IN ('sent','followup_sent','queued')").bind(email.toLowerCase(), now()).run();
+}
+
+// A business is worth emailing when at least one of these is true (OUTBOUND_GAP_SCORE 75, OUTBOUND_GAP_RANK 5):
+// score under the threshold · not in the top N for its trade · fewer reviews than the local median · no website.
+export function listingGap(env, audit) {
+  if (env.OUTBOUND_GAP_FILTER === "0") return "filter off";
+  const maxScore = Number(env.OUTBOUND_GAP_SCORE || 75), topN = Number(env.OUTBOUND_GAP_RANK || 5);
+  const rank = audit.visibility?.queries?.[0];
+  if (!audit.hasWebsite) return "no website";
+  if (audit.score < maxScore) return `score ${audit.score}`;
+  if (rank && (rank.position == null || rank.position > topN)) return rank.position == null ? "not in top 20" : `#${rank.position}`;
+  const med = audit.competitors?.medianReviews;
+  if (med != null && audit.place.reviewCount < med) return `${audit.place.reviewCount} reviews vs median ${med}`;
+  return null;
 }
 
 // ---------- the daily run ----------
@@ -375,6 +409,14 @@ async function runDailyInner(env, { date, limit, dryRun, deadline, subLimit, fc 
     try {
       const audit = await runAudit(env, biz.id, { category: plan.category.noun, categoryMatch: plan.category.match });
       const data = derived(audit);
+      // Only email businesses with a real gap. The #1 shop with 300 reviews doesn't need us, and emailing it burns the domain.
+      const gap = listingGap(env, audit);
+      if (!gap) {
+        const rec0 = await saveAudit(env, { place_id: biz.id, query: biz.name, source: "outbound", score: audit.score, grade: audit.grade, data, full: cacheable(audit) }).catch(() => null);
+        await insertOutreach(env, { ...base, audit_id: rec0?.id || null, email, score: audit.score, grade: audit.grade, status: "skipped", skip_reason: `strong listing (score ${audit.score}, ${audit.visibility?.queries?.[0]?.position ? `#${audit.visibility.queries[0].position}` : "unranked"})` });
+        run.skipped++; log.push({ business: biz.name, status: "skipped", reason: "strong listing" });
+        continue;
+      }
       const rec = await saveAudit(env, { place_id: biz.id, query: biz.name, source: "outbound", score: audit.score, grade: audit.grade, data, full: cacheable(audit) });
       actionPlan(env, data.facts).then((p) => savePlan(env, rec.id, p)).catch(() => {});
       const unsub_token = id("u").slice(2, 26);
@@ -477,8 +519,8 @@ export async function callSheet(env, day, { max = Number(env.CALLSHEET_MAX || 15
   for (const r of ranked) {
     r.line = await lineType(env, r.phone);
     const mk = MARKETS[r.city];
-    const cat = Object.values(SCHEDULE).find((c) => c.key === r.category);
-    r.opener = `Hi, is this the owner of ${r.business}? This is Bobby Lloyd with Mesa Intelligence ${mk?.local ? mk.local : "out of Las Cruces, New Mexico"}. I was looking at your Google listing and noticed ${spoken(r)}. I do free listing audits for ${cat?.plural || "local businesses"}. Could I email you yours? It takes two minutes to go over.`;
+    const cat = CATEGORIES[r.category];
+    r.opener = `Hi, is this the owner of ${r.business}? Bobby Lloyd, Mesa Intelligence, ${mk?.local ? mk.local : "out of Las Cruces, New Mexico"}. I was looking at your Google listing and noticed ${spoken(r)}. I work with ${cat?.plural || "local businesses"} on one problem: calls that ring out when you're on a job. I built an AI line that answers, books the job and texts the customer. I'll put it on a test number for ${env.PLAN_TRIAL_DAYS ?? 14} days free so you can hear it. Worth 10 minutes?`;
   }
   return ranked;
 }

@@ -161,6 +161,36 @@ export async function assignNumber(env, tenant, number, agentId) {
   if (hasDB(env)) await env.DB.prepare("UPDATE tenants SET voice_number = ? WHERE id = ?").bind(number, tenant.id).run();
 }
 
+// Buy a local number from Retell (Twilio-backed, ~$2/mo) in the business's area code, falling back to
+// Las Cruces (575) then El Paso (915), and point it at the tenant's agent. Returns the E.164 number.
+export async function buyNumber(env, tenant, agentId, siteOrigin, { areaCode } = {}) {
+  const want = [areaCode, ...String(env.VOICE_FALLBACK_AREA_CODES || "575,915").split(",")].map((a) => Number(String(a || "").replace(/\D/g, ""))).filter((a) => a >= 200 && a <= 999);
+  let agent_version = 0;
+  try { const a = await retell(env, "GET", `/get-agent/${agentId}`); if (Number.isFinite(Number(a?.version))) agent_version = Number(a.version); } catch {}
+  let last;
+  for (const area_code of [...new Set(want)]) {
+    try {
+      const n = await retell(env, "POST", "/create-phone-number", {
+        area_code, nickname: `${tenant.name} (Mesa)`, number_provider: env.RETELL_NUMBER_PROVIDER || "twilio",
+        inbound_agents: [{ agent_id: agentId, agent_version, weight: 1 }],
+        inbound_webhook_url: `${siteOrigin}/api/voice/inbound`,
+      });
+      if (hasDB(env)) await env.DB.prepare("UPDATE tenants SET voice_number = ? WHERE id = ?").bind(n.phone_number, tenant.id).run();
+      return n.phone_number;
+    } catch (e) { last = e; console.error("buyNumber", area_code, e?.message || e); if (e?.status === 401 || e?.status === 403) throw e; }
+  }
+  throw last || new Error("No number available");
+}
+
+// Everything a new subscriber needs to receive calls: agent (from the tenant's hours/services/knowledge) + a number.
+// Idempotent: reuses the tenant's agent and number when they exist.
+export async function provisionVoiceLine(env, tenant, siteOrigin, { areaCode } = {}) {
+  const { agent_id } = await provisionVoiceAgent(env, tenant, siteOrigin);
+  let number = tenant.voice_number || null;
+  if (!number) number = await buyNumber(env, { ...tenant, retell_agent_id: agent_id }, agent_id, siteOrigin, { areaCode });
+  return { agent_id, number };
+}
+
 export async function listNumbers(env) {
   return retell(env, "GET", "/list-phone-numbers");
 }

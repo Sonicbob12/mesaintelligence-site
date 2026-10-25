@@ -8,7 +8,8 @@
 //   • monthly Pro re-audit + "what changed" email (runMonthlyAudits, from the hourly cron tick)
 //   • review requests after each job (portal → SMS via Twilio or email via Resend, with their Google review link)
 //   • 24/7 web chat agent for their site (widget.js + tenant), bookings/leads emailed to them (workflow engine)
-//   • voice line / missed-call text-back: set up by Bobby (Retell + number) — flagged in the portal as "being set up"
+//   • voice line: created automatically at signup (provisionVoiceLine: Retell agent + local number in the client's
+//     area code, VOICE_AUTO_PROVISION != "0"); the welcome email carries the number + forwarding instructions
 //
 // Env: STRIPE_PLAN_PRICE_ID (monthly), STRIPE_PLAN_ANNUAL_PRICE_ID (optional), STRIPE_PRO_CREDIT_COUPON (optional,
 // a $99-off-once coupon id), PLAN_PRICE_USD (249), PLAN_ANNUAL_USD (2388).
@@ -18,6 +19,7 @@ import { loadAudit, runAudit, runProExtras, derived, cacheable, saveAudit, actio
 import { reportLink } from "./audit_pro.js";
 import { tenantToRow } from "./tenants.js";
 import { sendSms, twilioConfigured, toE164 } from "./twilio.js";
+import { provisionVoiceLine, retell } from "./retell.js";
 import { hasDB, id, now, safeJSON } from "./db.js";
 
 export const planConfigured = (env) => Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PLAN_PRICE_ID);
@@ -39,19 +41,31 @@ export function guessVertical(name, typeLabel) {
 const slug = (s) => String(s || "biz").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
 // ---------- checkout ----------
-export async function createPlanCheckout(env, { audit, email, name, interval = "month", outreachId }) {
-  const price = interval === "year" && env.STRIPE_PLAN_ANNUAL_PRICE_ID ? env.STRIPE_PLAN_ANNUAL_PRICE_ID : env.STRIPE_PLAN_PRICE_ID;
+// Env (all optional): STRIPE_SETUP_PRICE_ID (one-time setup fee, added to monthly checkouts; waived on annual),
+// STRIPE_FOUNDING_PRICE_ID + FOUNDING_CODE (founding-client monthly price, unlocked by ?code=), PLAN_TRIAL_DAYS (14).
+export async function createPlanCheckout(env, { audit, email, name, interval = "month", outreachId, code }) {
+  const founding = Boolean(code && env.FOUNDING_CODE && code.trim().toLowerCase() === env.FOUNDING_CODE.toLowerCase() && env.STRIPE_FOUNDING_PRICE_ID);
+  const annual = interval === "year" && env.STRIPE_PLAN_ANNUAL_PRICE_ID;
+  const price = founding ? env.STRIPE_FOUNDING_PRICE_ID : annual ? env.STRIPE_PLAN_ANNUAL_PRICE_ID : env.STRIPE_PLAN_PRICE_ID;
   const business = audit?.business_name || audit?.full?.place?.name || "";
   const paidPro = Boolean(audit?.stripe_payment);
+  const trialDays = Number(env.PLAN_TRIAL_DAYS ?? 14);
+  const line_items = [{ price, quantity: 1 }];
+  if (env.STRIPE_SETUP_PRICE_ID && !annual && !founding) line_items.push({ price: env.STRIPE_SETUP_PRICE_ID, quantity: 1 });
   const body = {
     mode: "subscription",
-    line_items: [{ price, quantity: 1 }],
+    line_items,
     success_url: `${site(env)}/portal?cs={CHECKOUT_SESSION_ID}&welcome=1`,
     cancel_url: audit ? `${reportLink(env, audit.id, audit.share_key)}` : `${site(env)}/#audit`,
     customer_email: email || audit?.contact_email || undefined,
     client_reference_id: audit?.id || undefined,
-    metadata: { kind: "plan", audit_id: audit?.id || "", place_id: audit?.place_id || "", business: business.slice(0, 200), outreach_id: outreachId || "", name: String(name || audit?.contact_name || "").slice(0, 120) },
-    subscription_data: { metadata: { kind: "plan", audit_id: audit?.id || "", business: business.slice(0, 200) } },
+    metadata: { kind: "plan", audit_id: audit?.id || "", place_id: audit?.place_id || "", business: business.slice(0, 200), outreach_id: outreachId || "", name: String(name || audit?.contact_name || "").slice(0, 120), founding: founding ? "1" : "" },
+    subscription_data: {
+      metadata: { kind: "plan", audit_id: audit?.id || "", business: business.slice(0, 200), founding: founding ? "1" : "" },
+      ...(trialDays > 0 ? { trial_period_days: trialDays, trial_settings: { end_behavior: { missing_payment_method: "cancel" } } } : {}),
+    },
+    // Card is collected up front so the trial converts without a second step.
+    payment_method_collection: "always",
     allow_promotion_codes: true,
     automatic_tax: env.STRIPE_AUTOMATIC_TAX === "1" ? { enabled: true } : undefined,
   };
@@ -108,17 +122,28 @@ export async function provisionPlan(env, session, { waitUntil } = {}) {
     .bind(plan.id, plan.tenant_id, plan.audit_id, plan.place_id, plan.business, plan.name, plan.email, plan.phone || null, plan.website, plan.stripe_customer, plan.stripe_subscription, plan.stripe_session, null, null, plan.status, plan.portal_token, 0, JSON.stringify(plan.settings), plan.next_audit_at, plan.last_audit_id, plan.last_score, now()).run();
   if (m.outreach_id) await env.DB.prepare("UPDATE outreach SET status = 'client', updated_at = ?2 WHERE id = ?1").bind(m.outreach_id, now()).run().catch(() => {});
 
-  // 3) emails
+  // 3) voice line — agent + a local number, no human step. Failure never blocks the signup; the alert tells Bobby.
+  let voice = null, voiceError = null;
+  if (env.RETELL_API_KEY && env.VOICE_AUTO_PROVISION !== "0") {
+    try { voice = await provisionVoiceLine(env, tenant, site(env), { areaCode: areaCodeOf(phone) || areaCodeOf(place.phone) }); }
+    catch (e) { voiceError = String(e?.message || e).slice(0, 300); console.error("voice provision", voiceError); }
+  }
+  const pretty = voice?.number ? prettyPhone(voice.number) : null;
+
+  // 4) emails
   const link = portalLink(env, plan.portal_token);
   const mails = Promise.all([
     sendMail(env, { to: [email], reply_to: env.LEAD_TO, subject: `Welcome to the Local Growth Plan — ${business}`,
-      text: `Hi ${name.split(" ")[0] || "there"},\n\nYou're in. Your plan dashboard is here (bookmark it, it's your private link):\n${link}\n\nTake 5 minutes there to finish setup: confirm your hours and services, paste your Google review link, and grab the one-line chat widget for your website.\n\nWhat's running from today:\n• Monthly re-audit of your Google listing, website and search rank, with a "what changed" email\n• One-tap review requests to customers after each job\n• A 24/7 chat agent for your website that books and captures leads, sent straight to ${email}\n• Voice line / missed-call text-back: I'll set this up with you in the next 2 business days\n\nReply to this email any time — it comes straight to me.\n\nBobby Lloyd\nMesa Intelligence · Las Cruces, NM · (575) 254-1185` }),
+      text: `Hi ${name.split(" ")[0] || "there"},\n\nYou're in. Your plan dashboard is here (bookmark it, it's your private link):\n${link}\n\nTake 5 minutes there to finish setup: confirm your hours and services, paste your Google review link, and grab the one-line chat widget for your website.\n\nWhat's running from today:\n• Monthly re-audit of your Google listing, website and search rank, with a "what changed" email\n• One-tap review requests to customers after each job\n• A 24/7 chat agent for your website that books and captures leads, sent straight to ${email}\n${pretty ? `• Your AI phone line is live now at ${pretty}. Call it and hear it. To put it to work, forward your business line to it when you can't answer (most carriers: dial *72 then ${pretty.replace(/\D/g, "").replace(/^1/, "")}, or set "conditional forwarding" in your phone's settings). Every call it takes is emailed to you, and bookings text the customer a confirmation.` : "• Voice line: I'm finishing your number by hand and will email it within 1 business day"}\n\nReply to this email any time — it comes straight to me.\n\nBobby Lloyd\nMesa Intelligence · Las Cruces, NM · (575) 254-1185` }),
     env.LEAD_TO ? sendMail(env, { to: [env.LEAD_TO], reply_to: email || undefined, subject: `💵 NEW PLAN: ${business} — ${name} <${email}>`,
-      text: `${business}\n${name} <${email}>${phone ? ` · ${phone}` : ""}\nTenant: ${tenantId}\nPortal: ${link}\nStripe customer: ${session.customer || "—"} · subscription: ${session.subscription || "—"}\nAudit: ${auditId ? reportLink(env, auditId, audit?.share_key) : "—"}\n\nTO DO (you): set up the voice line / missed-call text-back for this tenant in /admin → Voice; confirm services in /admin → Tenants.` }) : Promise.resolve(),
+      text: `${business}\n${name} <${email}>${phone ? ` · ${phone}` : ""}\nTenant: ${tenantId}\nPortal: ${link}\nStripe customer: ${session.customer || "—"} · subscription: ${session.subscription || "—"}\nAudit: ${auditId ? reportLink(env, auditId, audit?.share_key) : "—"}\n\nVoice line: ${pretty ? `LIVE at ${pretty} (auto-provisioned)` : `NOT provisioned — ${voiceError || "auto-provision off"} → set up in /admin → Voice`}\nTO DO (you): confirm hours/services in /admin → Tenants; call the line once to check the greeting.` }) : Promise.resolve(),
   ]).catch((e) => console.error("plan mails", e?.message || e));
   if (typeof waitUntil === "function") waitUntil(mails); else await mails;
   return plan;
 }
+
+const areaCodeOf = (raw) => { const d = String(raw || "").replace(/\D/g, "").replace(/^1(\d{10})$/, "$1"); return d.length === 10 ? Number(d.slice(0, 3)) : null; };
+const prettyPhone = (e164) => { const d = String(e164 || "").replace(/\D/g, "").replace(/^1(\d{10})$/, "$1"); return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : e164; };
 
 export async function updatePlanFromSubscription(env, sub) {
   if (!hasDB(env) || !sub?.id) return;
@@ -128,7 +153,15 @@ export async function updatePlanFromSubscription(env, sub) {
     .bind(sub.id, status, price?.id || null, price?.recurring?.interval || null, sub.customer || null, now()).run();
   if (status === "canceled") {
     const p = await env.DB.prepare("SELECT tenant_id FROM plans WHERE stripe_subscription = ?").bind(sub.id).first();
-    if (p?.tenant_id) await env.DB.prepare("UPDATE tenants SET active = 0 WHERE id = ?").bind(p.tenant_id).run();
+    if (p?.tenant_id) {
+      await env.DB.prepare("UPDATE tenants SET active = 0 WHERE id = ?").bind(p.tenant_id).run();
+      // Release the number so it stops billing (~$2/mo). The agent stays, so a return keeps its setup.
+      const t = await env.DB.prepare("SELECT voice_number FROM tenants WHERE id = ?").bind(p.tenant_id).first();
+      if (t?.voice_number && env.RETELL_API_KEY && env.VOICE_RELEASE_ON_CANCEL !== "0") {
+        try { await retell(env, "DELETE", `/delete-phone-number/${encodeURIComponent(t.voice_number)}`); await env.DB.prepare("UPDATE tenants SET voice_number = NULL WHERE id = ?").bind(p.tenant_id).run(); }
+        catch (e) { console.error("release number", e?.message || e); }
+      }
+    }
   } else if (status === "active") {
     const p = await env.DB.prepare("SELECT tenant_id FROM plans WHERE stripe_subscription = ?").bind(sub.id).first();
     if (p?.tenant_id) await env.DB.prepare("UPDATE tenants SET active = 1 WHERE id = ?").bind(p.tenant_id).run();
