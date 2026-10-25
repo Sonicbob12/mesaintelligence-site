@@ -7,6 +7,7 @@ import { json } from "../../_lib/http.js";
 import { runMonthlyAudits } from "../../_lib/plan.js";
 import { runUsageBilling } from "../../_lib/usage.js";
 import { runTrialCheckins } from "../../_lib/trial.js";
+import { retryVoiceProvisioning } from "../../_lib/voice_retry.js";
 import { runDaily, planFor, sendDigestOnce } from "../../_lib/outbound.js";
 import { localDate } from "../../_lib/time.js";
 
@@ -21,6 +22,8 @@ export async function onRequest({ request, env, waitUntil }) {
   const usage = await runUsageBilling(env).catch((e) => ({ error: String(e?.message || e) }));
   // Trial check-ins: day-3 "what it did" and the T-4 "trial ends" email (trial.js), business hours only.
   const checkins = await runTrialCheckins(env).catch((e) => ({ error: String(e?.message || e) }));
+  // Voice lines that failed to provision at signup: retry hourly, email the client when the number lands (voice_retry.js).
+  const voiceRetry = await retryVoiceProvisioning(env).catch((e) => ({ error: String(e?.message || e) }));
   // Outbound top-up: if the 7:05 run didn't reach the daily cap, keep going on the 8 AM–3 PM ticks (weekday
   // categories only). Runs in the background so cron-job.org's 30 s timeout can't cut it off. This invocation has
   // already spent requests on reminders/digests/audits, so the outbound share gets a smaller request budget.
@@ -37,5 +40,5 @@ export async function onRequest({ request, env, waitUntil }) {
   let digest = null;
   const digestHour = Number(env.OUTBOUND_DIGEST_HOUR || lastTopUp + 1);
   if (env.OUTBOUND_ENABLED === "1" && hour >= digestHour && hour <= digestHour + 2 && plan.mode !== "off") digest = await bg(sendDigestOnce(env));
-  return json({ ok: true, at: new Date().toISOString(), reminders, digests, plans, usage, checkins, outbound, digest });
+  return json({ ok: true, at: new Date().toISOString(), reminders, digests, plans, usage, checkins, voice_retry: voiceRetry, outbound, digest });
 }
