@@ -133,6 +133,7 @@ const TRADES = [
   [/\b(construct|builder|build|contracting)/i, "general contractor"],
 ];
 export function competitorCategory(place) {
+  if (place.categoryOverride) return place.categoryOverride;
   if (place.primaryType && !BROAD.has(place.primaryType)) return place.typeLabel || place.primaryType.replace(/_/g, " ");
   for (const [re, label] of TRADES) if (re.test(place.name)) return label;
   return place.typeLabel || "business";

@@ -15,18 +15,21 @@ export async function onRequest({ request, env, waitUntil }) {
   const reminders = await sendDueReminders(env, loadTenant).catch((e) => ({ error: String(e?.message || e) }));
   const digests = await sendDigests(env, await listTenants(env)).catch((e) => ({ error: String(e?.message || e) }));
   const plans = await runMonthlyAudits(env).catch((e) => ({ error: String(e?.message || e) }));
-  // Outbound top-up: if the 7:05 run didn't reach the daily cap, keep going on the 8–11 AM ticks (weekday categories
-  // only). Runs in the background so cron-job.org's 30 s timeout can't cut it off.
+  // Outbound top-up: if the 7:05 run didn't reach the daily cap, keep going on the 8 AM–3 PM ticks (weekday
+  // categories only). Runs in the background so cron-job.org's 30 s timeout can't cut it off. This invocation has
+  // already spent requests on reminders/digests/audits, so the outbound share gets a smaller request budget.
   let outbound = null;
   const hour = Number(localDate(new Date(), "America/Denver").hh);
   const plan = planFor(env);
   const bg = (p) => (typeof waitUntil === "function" ? (waitUntil(p.catch((e) => console.error("tick bg", e))), "started in background") : p);
-  if (env.OUTBOUND_ENABLED === "1" && hour >= 8 && hour <= 11 && plan.mode === "daily") {
-    outbound = await bg(runDaily(env, { timeBudgetMs: Number(env.OUTBOUND_TICK_BUDGET_MS || 18000) })
+  const lastTopUp = Number(env.OUTBOUND_TOPUP_UNTIL || 15);
+  if (env.OUTBOUND_ENABLED === "1" && hour >= 8 && hour <= lastTopUp && plan.mode === "daily") {
+    outbound = await bg(runDaily(env, { timeBudgetMs: Number(env.OUTBOUND_TICK_BUDGET_MS || 18000), subrequestLimit: Number(env.OUTBOUND_TICK_SUBREQUEST_LIMIT || env.OUTBOUND_SUBREQUEST_LIMIT || 38) })
       .then((r) => ({ emailed: r.run.emailed, skipped: r.run.skipped, found: r.run.found, notes: r.run.notes || null, errors: r.run.errors.length })));
   }
-  // Daily outbound digest at noon on weekdays, after the morning top-ups (sent once per day).
+  // Daily outbound digest + call sheet at 4 PM on weekdays, after the top-ups (sent once per day).
   let digest = null;
-  if (env.OUTBOUND_ENABLED === "1" && hour === 12 && plan.mode !== "off") digest = await bg(sendDigestOnce(env));
+  const digestHour = Number(env.OUTBOUND_DIGEST_HOUR || lastTopUp + 1);
+  if (env.OUTBOUND_ENABLED === "1" && hour >= digestHour && hour <= digestHour + 2 && plan.mode !== "off") digest = await bg(sendDigestOnce(env));
   return json({ ok: true, at: new Date().toISOString(), reminders, digests, plans, outbound, digest });
 }

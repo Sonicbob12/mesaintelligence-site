@@ -1,7 +1,12 @@
 // Outbound engine — one category per weekday, one city per week, N cold emails a day.
 //
-//   Mon HVAC · Tue restaurants · Wed dental · Thu legal · Fri follow-ups + digest only.
-//   Odd campaign weeks = Las Cruces, even = El Paso (week 1 starts OUTBOUND_START, default 2026-10-19).
+//   Mon HVAC · Tue restaurants · Wed dental · Thu legal · Fri follow-ups only.
+//   Markets rotate one per campaign day through ROTATION (home markets Las Cruces + El Paso come up 3× per
+//   21-day cycle; the rest of NM, Arizona and West Texas once). If the day's market runs dry before the cap,
+//   the run overflows into the next market in the rotation. Day 1 = OUTBOUND_START (default 2026-10-19).
+//   Businesses with no email (or no website) land on the daily CALL SHEET in the digest — Bobby dials those
+//   himself. Never call them with an AI voice: AI voices are "artificial" under the TCPA (FCC, Feb 2024) and
+//   need prior written consent for marketing calls.
 //
 // Daily run: Places search for the day's category in the day's city → skip anyone already contacted or
 // suppressed → find an email on their website → run the FREE audit → Claude writes a short, specific
@@ -20,31 +25,67 @@ import { localDate } from "./time.js";
 
 const TZ = "America/Denver";
 export const SCHEDULE = {
-  mon: { key: "hvac", label: "HVAC", search: "HVAC contractor", queries: ["HVAC contractor", "air conditioning repair", "heating and cooling service", "refrigerated air installation", "furnace repair"], angle: "missed calls and after-hours dispatch — every call that rings out is a service ticket somebody else gets" },
-  tue: { key: "restaurant", label: "Restaurants", search: "restaurant", queries: ["restaurant", "mexican restaurant", "family restaurant", "steakhouse", "cafe", "bar and grill"], angle: "hosting and reservations — people decide where to eat from the listing, the photos and whether they can book in two taps" },
-  wed: { key: "dental", label: "Dental", search: "dentist", queries: ["dentist", "dental clinic", "family dentistry", "orthodontist", "pediatric dentist", "cosmetic dentist"], angle: "new-patient intake — the practice that answers first and books online wins the patient" },
-  thu: { key: "legal", label: "Legal", search: "law firm", queries: ["law firm", "personal injury lawyer", "family law attorney", "criminal defense attorney", "immigration lawyer", "estate planning attorney"], angle: "client intake — a potential client who can't reach you in the first hour calls the next firm on the list" },
+  mon: { key: "hvac", label: "HVAC", noun: "HVAC contractor", plural: "HVAC companies", match: /hvac|heating|air|cool|furnace|refrigera|mechanical/i, search: "HVAC contractor", queries: ["HVAC contractor", "air conditioning repair", "heating and cooling service", "refrigerated air installation", "furnace repair"], angle: "missed calls and after-hours dispatch — every call that rings out is a service ticket somebody else gets" },
+  tue: { key: "restaurant", label: "Restaurants", noun: "restaurant", plural: "restaurants", match: /restaurant|cafe|café|grill|bar\b|diner|steak|pizza|taco|food|bistro|eatery|coffee|bakery|kitchen|cantina|brewery|bbq|barbecue/i, search: "restaurant", queries: ["restaurant", "mexican restaurant", "family restaurant", "steakhouse", "cafe", "bar and grill"], angle: "hosting and reservations — people decide where to eat from the listing, the photos and whether they can book in two taps" },
+  wed: { key: "dental", label: "Dental", noun: "dentist", plural: "dental offices", match: /dent|orthodont|endodont|periodont|oral|smile/i, search: "dentist", queries: ["dentist", "dental clinic", "family dentistry", "orthodontist", "pediatric dentist", "cosmetic dentist"], angle: "new-patient intake — the practice that answers first and books online wins the patient" },
+  thu: { key: "legal", label: "Legal", noun: "attorney", plural: "law firms", match: /law|attorney|lawyer|legal/i, search: "law firm", queries: ["law firm", "personal injury lawyer", "family law attorney", "criminal defense attorney", "immigration lawyer", "estate planning attorney"], angle: "client intake — a potential client who can't reach you in the first hour calls the next firm on the list" },
 };
-export const CITIES = [
-  { key: "las-cruces", label: "Las Cruces", query: "Las Cruces, NM", center: { latitude: 32.3199, longitude: -106.7637 },
-    nearby: [{ query: "Mesilla, NM", center: { latitude: 32.2701, longitude: -106.8006 } }, { query: "Anthony, NM", center: { latitude: 32.0040, longitude: -106.6056 } }, { query: "Santa Teresa, NM", center: { latitude: 31.8559, longitude: -106.6392 } }, { query: "Sunland Park, NM", center: { latitude: 31.7965, longitude: -106.5799 } }] },
-  { key: "el-paso", label: "El Paso", query: "El Paso, TX", center: { latitude: 31.7619, longitude: -106.485 },
-    nearby: [{ query: "Horizon City, TX", center: { latitude: 31.6929, longitude: -106.2072 } }, { query: "Socorro, TX", center: { latitude: 31.6546, longitude: -106.3033 } }, { query: "Canutillo, TX", center: { latitude: 31.9118, longitude: -106.5992 } }, { query: "Anthony, TX", center: { latitude: 31.9993, longitude: -106.6050 } }] },
-];
+const C = (latitude, longitude) => ({ latitude, longitude });
+const N = (query, lat, lng) => ({ query, center: C(lat, lng) });
+// local: Bobby can honestly say "here in <area>". tz: the market's own time zone (sends happen ~7–4 Mountain).
+export const MARKETS = {
+  "las-cruces": { key: "las-cruces", label: "Las Cruces", query: "Las Cruces, NM", center: C(32.3199, -106.7637), local: "here in Las Cruces",
+    nearby: [N("Mesilla, NM", 32.2701, -106.8006), N("Anthony, NM", 32.004, -106.6056), N("Santa Teresa, NM", 31.8559, -106.6392), N("Sunland Park, NM", 31.7965, -106.5799), N("Hatch, NM", 32.6648, -107.1531)] },
+  "el-paso": { key: "el-paso", label: "El Paso", query: "El Paso, TX", center: C(31.7619, -106.485), local: "just up the road in Las Cruces",
+    nearby: [N("Horizon City, TX", 31.6929, -106.2072), N("Socorro, TX", 31.6546, -106.3033), N("Canutillo, TX", 31.9118, -106.5992), N("Anthony, TX", 31.9993, -106.605)] },
+  albuquerque: { key: "albuquerque", label: "Albuquerque", query: "Albuquerque, NM", center: C(35.0844, -106.6504), local: "down in Las Cruces",
+    nearby: [N("Los Lunas, NM", 34.8062, -106.7334), N("Bernalillo, NM", 35.3, -106.5511), N("Corrales, NM", 35.2378, -106.6067)] },
+  "rio-rancho": { key: "rio-rancho", label: "Rio Rancho", query: "Rio Rancho, NM", center: C(35.2328, -106.663), local: "down in Las Cruces", nearby: [N("Placitas, NM", 35.3067, -106.4245)] },
+  "santa-fe": { key: "santa-fe", label: "Santa Fe", query: "Santa Fe, NM", center: C(35.687, -105.9378), local: "down in Las Cruces", nearby: [N("Española, NM", 35.9911, -106.0806), N("Los Alamos, NM", 35.8881, -106.3069)] },
+  roswell: { key: "roswell", label: "Roswell", query: "Roswell, NM", center: C(33.3943, -104.523), local: "over in Las Cruces", nearby: [N("Artesia, NM", 32.8423, -104.4033), N("Carlsbad, NM", 32.4207, -104.2288), N("Hobbs, NM", 32.7026, -103.136)] },
+  alamogordo: { key: "alamogordo", label: "Alamogordo", query: "Alamogordo, NM", center: C(32.8995, -105.9603), local: "over the pass in Las Cruces", nearby: [N("Tularosa, NM", 33.0737, -106.0186), N("Ruidoso, NM", 33.3317, -105.673)] },
+  farmington: { key: "farmington", label: "Farmington", query: "Farmington, NM", center: C(36.7281, -108.2187), local: "in Las Cruces", nearby: [N("Aztec, NM", 36.8222, -107.9928), N("Bloomfield, NM", 36.7111, -107.9845)] },
+  deming: { key: "deming", label: "Deming", query: "Deming, NM", center: C(32.2687, -107.7586), local: "next door in Las Cruces", nearby: [N("Lordsburg, NM", 32.3504, -108.7087), N("Columbus, NM", 31.8276, -107.6403)] },
+  "silver-city": { key: "silver-city", label: "Silver City", query: "Silver City, NM", center: C(32.7701, -108.2803), local: "over in Las Cruces", nearby: [N("Bayard, NM", 32.7615, -108.1306)] },
+  "t-or-c": { key: "t-or-c", label: "Truth or Consequences", query: "Truth or Consequences, NM", center: C(33.1284, -107.2528), local: "down the road in Las Cruces", nearby: [N("Elephant Butte, NM", 33.1487, -107.1847), N("Socorro, NM", 34.0584, -106.8914)] },
+  tucson: { key: "tucson", label: "Tucson", query: "Tucson, AZ", center: C(32.2226, -110.9747), local: null, nearby: [N("Oro Valley, AZ", 32.3909, -110.9665), N("Marana, AZ", 32.4367, -111.2257), N("Sahuarita, AZ", 31.9576, -110.9556)] },
+  phoenix: { key: "phoenix", label: "Phoenix", query: "Phoenix, AZ", center: C(33.4484, -112.074), local: null,
+    nearby: [N("Mesa, AZ", 33.4152, -111.8315), N("Chandler, AZ", 33.3062, -111.8413), N("Gilbert, AZ", 33.3528, -111.789), N("Tempe, AZ", 33.4255, -111.94), N("Glendale, AZ", 33.5387, -112.186), N("Scottsdale, AZ", 33.4942, -111.9261)] },
+  midland: { key: "midland", label: "Midland", query: "Midland, TX", center: C(31.9973, -102.0779), local: null, nearby: [] },
+  odessa: { key: "odessa", label: "Odessa", query: "Odessa, TX", center: C(31.8457, -102.3676), local: null, nearby: [] },
+  lubbock: { key: "lubbock", label: "Lubbock", query: "Lubbock, TX", center: C(33.5779, -101.8552), local: null, nearby: [N("Wolfforth, TX", 33.5059, -102.0091)] },
+  "san-angelo": { key: "san-angelo", label: "San Angelo", query: "San Angelo, TX", center: C(31.4638, -100.437), local: null, nearby: [] },
+};
+// 21 entries (odd, so every market meets every weekday category over time). Home markets 3× each.
+export const ROTATION = ["las-cruces", "albuquerque", "midland", "el-paso", "phoenix", "santa-fe", "las-cruces", "tucson", "roswell", "el-paso",
+  "lubbock", "alamogordo", "las-cruces", "rio-rancho", "odessa", "el-paso", "farmington", "san-angelo", "deming", "silver-city", "t-or-c"];
+// Optional override: OUTBOUND_MARKETS = comma list of market keys to rotate through instead.
+function rotation(env) {
+  const list = String(env.OUTBOUND_MARKETS || "").split(",").map((x) => x.trim()).filter((k) => MARKETS[k]);
+  return list.length ? list : ROTATION;
+}
+export const CITIES = [MARKETS["las-cruces"], MARKETS["el-paso"]]; // kept for older callers
 
 export function planFor(env, date = new Date()) {
   const d = localDate(date, TZ);
   const start = env.OUTBOUND_START || "2026-10-19";
   const dayMs = 86400000;
-  const weeks = Math.floor((Date.parse(`${d.iso}T12:00:00Z`) - Date.parse(`${start}T12:00:00Z`)) / (7 * dayMs));
-  const city = CITIES[((weeks % 2) + 2) % 2];
+  const days = Math.round((Date.parse(`${d.iso}T12:00:00Z`) - Date.parse(`${start}T12:00:00Z`)) / dayMs);
+  const weeks = Math.floor(days / 7);
+  // Campaign day index: counts Mon–Thu only, so each category day advances the market rotation by one.
+  const full = Math.max(0, weeks) * 4;
+  const wdIdx = { mon: 0, tue: 1, wed: 2, thu: 3 }[d.weekday];
+  const dayIdx = full + (wdIdx ?? 3);
+  const rot = rotation(env);
+  const city = MARKETS[rot[((dayIdx % rot.length) + rot.length) % rot.length]];
+  const overflow = [1, 2].map((k) => MARKETS[rot[(dayIdx + k) % rot.length]]).filter((m) => m && m.key !== city.key);
   const cat = SCHEDULE[d.weekday] || null;
-  return { day: d.iso, weekday: d.weekday, week: weeks + 1, city, category: cat, mode: cat ? "daily" : d.weekday === "fri" ? "followups" : "off" };
+  return { day: d.iso, weekday: d.weekday, week: weeks + 1, dayIdx, city, overflow, category: cat, mode: cat ? "daily" : d.weekday === "fri" ? "followups" : "off" };
 }
 
 // ---------- finding an email on the business website ----------
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-const BAD_EMAIL = /(example|sentry|wixpress|godaddy|squarespace|wordpress|cloudflare|\.png|\.jpg|\.gif|\.svg|\.webp|noreply|no-reply|donotreply|privacy@|abuse@|legal@|press@|careers@|jobs@|hr@|billing@|accounting@|support@)/i;
+const BAD_EMAIL = /(@doe\.com|john@doe|jane@doe|@domain\.com|@email\.com|@yourdomain|@yoursite|@yourcompany|@company\.com|@website\.com|@mysite|@test\.com|@sample|youremail|your-?email|yourname|first\.?last@|name@|user@|test@|email@email|@mail\.com$|@xxx|example|sentry|wixpress|godaddy|squarespace|wordpress|cloudflare|\.png|\.jpg|\.gif|\.svg|\.webp|noreply|no-reply|donotreply|privacy@|abuse@|legal@|press@|careers@|jobs@|hr@|billing@|accounting@|support@)/i;
 async function fetchText(url, ms = 6000) {
   try {
     const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(ms), headers: { "user-agent": "Mozilla/5.0 (compatible; MesaAudit/1.0; +https://mesaintelligence.ai)" } });
@@ -104,7 +145,11 @@ export async function findEmail(website) {
 export async function* streamCandidates(env, plan, { maxSearches = Number(env.OUTBOUND_MAX_SEARCHES || 14), resume = true } = {}) {
   const seen = new Set();
   const queries = plan.category.queries?.length ? plan.category.queries : [plan.category.search];
-  const areas = [{ query: plan.city.query, center: plan.city.center, pages: 2 }, ...(plan.city.nearby || []).map((n) => ({ ...n, pages: 1 }))];
+  const areas = [
+    { query: plan.city.query, center: plan.city.center, pages: 2, market: plan.city.key },
+    ...(plan.city.nearby || []).map((n) => ({ ...n, pages: 1, market: plan.city.key })),
+    ...(plan.overflow || []).map((m) => ({ query: m.query, center: m.center, pages: 1, market: m.key })),
+  ];
   const pairs = areas.flatMap((area) => queries.map((q) => ({ area, q })));
   // Daily cursor (in rate_limits): how many query/area pairs earlier runs today fully walked, so the hourly top-ups
   // resume instead of re-paying for the same searches.
@@ -130,7 +175,7 @@ export async function* streamCandidates(env, plan, { maxSearches = Number(env.OU
       for (const p of data.places || []) {
         if (seen.has(p.id) || (p.businessStatus && p.businessStatus !== "OPERATIONAL")) continue;
         seen.add(p.id);
-        yield { id: p.id, name: p.displayName?.text || "", website: p.websiteUri || "", phone: p.nationalPhoneNumber || "", rating: p.rating ?? null, reviews: p.userRatingCount || 0, address: p.formattedAddress || "", query: `${q} in ${area.query}` };
+        yield { id: p.id, name: p.displayName?.text || "", website: p.websiteUri || "", phone: p.nationalPhoneNumber || "", rating: p.rating ?? null, reviews: p.userRatingCount || 0, address: p.formattedAddress || "", query: `${q} in ${area.query}`, market: area.market, area: area.query };
       }
       token = data.nextPageToken;
       if (!token) break;
@@ -175,7 +220,8 @@ export async function composeEmail(env, { plan, biz, audit, links }) {
   const rank = audit.visibility?.queries?.[0];
   const top = audit.issues.slice(0, 3);
   const facts = {
-    business: biz.name, business_type: plan.category.label, city: plan.city.label,
+    business: biz.name, business_type: plan.category.label, city: (MARKETS[biz.market] || plan.city).label,
+    bobby_location: (MARKETS[biz.market] || plan.city).local ? `Bobby is local — he can say he's ${(MARKETS[biz.market] || plan.city).local}` : "Bobby is based in Las Cruces, New Mexico and works with businesses across the Southwest — do not claim he is local to them",
     overall_score: audit.score, grade: audit.grade,
     rank: rank ? { search: rank.label, position: rank.position, of: rank.results, leader: rank.leader?.name, leader_reviews: rank.leader?.reviewCount } : null,
     reviews: audit.place.reviewCount, rating: audit.place.rating, local_median_reviews: audit.competitors.medianReviews,
@@ -185,8 +231,8 @@ export async function composeEmail(env, { plan, biz, audit, links }) {
   };
   const system = [
     "You write short cold emails for Bobby Lloyd, founder of Mesa Intelligence, a Las Cruces NM firm that builds practical AI (missed-call answering, online booking, review requests) for local businesses.",
-    "Write to the owner of a local business about a free audit Bobby just ran on their Google listing. Plain text. 70-110 words. No subject line in the body. No bullet points, no markdown, no exclamation marks, no hype words (game-changer, skyrocket, unlock).",
-    "Structure: 1) one sentence that states their most striking real number (rank or reviews gap) — specific, not flattering. 2) one sentence on what it costs them, tied to the industry_angle. 3) one sentence: Bobby runs a local company and the full report is normally $99, but it's free if they book a 15-minute call — then the placeholder {BOOK_LINK}. 4) one line sign-off: Bobby. Mention the free summary with the placeholder {REPORT_LINK} once, naturally.",
+    "Write to the owner of a business about a free audit Bobby just ran on their Google listing. Follow bobby_location exactly when describing where Bobby is. Plain text. 70-110 words. No subject line in the body. No bullet points, no markdown, no exclamation marks, no hype words (game-changer, skyrocket, unlock).",
+    "Structure: 1) one sentence that states their most striking real number (rank or reviews gap) — specific, not flattering. 2) one sentence on what it costs them, tied to the industry_angle. 3) one sentence: who Bobby is (per bobby_location) and the full report is normally $99, but it's free if they book a 15-minute call — then the placeholder {BOOK_LINK}. 4) one line sign-off: Bobby. Mention the free summary with the placeholder {REPORT_LINK} once, naturally.",
     "Use only the facts given. Never invent numbers. If rank.position is null say they do not appear in the top 20 for that search.",
     'Respond with JSON only: {"subject": "max 7 words, specific, lowercase except names, no clickbait", "body": "the email with {REPORT_LINK} and {BOOK_LINK} placeholders"}',
   ].join("\n");
@@ -201,7 +247,9 @@ export async function composeEmail(env, { plan, biz, audit, links }) {
   if (!body || !body.includes("{BOOK_LINK}")) {
     const r = rank ? (rank.position ? `you're #${rank.position} of ${rank.results} when someone searches "${rank.label}"` : `you don't show up in the top 20 when someone searches "${rank.label}"`) : `your listing scores ${audit.score}/100`;
     subject = subject || `${biz.name} — ${rank?.position ? `#${rank.position}` : "not in the top 20"} for "${rank?.label || plan.category.search}"`;
-    body = `Hi,\n\nI ran a quick audit on ${biz.name}'s Google listing this morning: ${r}${audit.competitors.medianReviews ? `, with ${audit.place.reviewCount} reviews against a local median of ${audit.competitors.medianReviews}` : ""}. The free summary is here: {REPORT_LINK}\n\nFor a ${plan.category.label.toLowerCase()} business that mostly comes down to ${plan.category.angle.split(" — ")[0]}.\n\nI run Mesa Intelligence here in Las Cruces. The full report is normally $99, but it's free if you book a 15-minute call with me: {BOOK_LINK}\n\nBobby`;
+    const mk = MARKETS[biz.market] || plan.city;
+    const who = mk.local ? `I run Mesa Intelligence ${mk.local}` : "I run Mesa Intelligence out of Las Cruces, NM";
+    body = `Hi,\n\nI ran a quick audit on ${biz.name}'s Google listing this morning: ${r}${audit.competitors.medianReviews ? `, with ${audit.place.reviewCount} reviews against a local median of ${audit.competitors.medianReviews}` : ""}. The free summary is here: {REPORT_LINK}\n\nFor a ${plan.category.label.toLowerCase()} business that mostly comes down to ${plan.category.angle.split(" — ")[0]}.\n\n${who}. The full report is normally $99, but it's free if you book a 15-minute call with me: {BOOK_LINK}\n\nBobby`;
   }
   body = body.replace(/\{REPORT_LINK\}/g, links.report).replace(/\{BOOK_LINK\}/g, links.book);
   const footer = `\n\n—\nBobby Lloyd · Mesa Intelligence LLC · ${env.OUTBOUND_POSTAL_ADDRESS || "Las Cruces, NM"} · (575) 254-1185\nNot interested? ${links.unsub} and you won't hear from me again.`;
@@ -238,6 +286,12 @@ async function suppressed(env, email) {
 }
 async function insertOutreach(env, o) {
   const t = now();
+  try {
+    await env.DB.prepare(`INSERT INTO outreach (id, place_id, audit_id, run_id, category, city, business, email, website, phone, score, grade, rank_label, rank_position, status, skip_reason, subject, body_text, unsub_token, sent_at, last_error, created_at, updated_at, rating, reviews)
+      VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?22,?23,?24)`)
+      .bind(o.id, o.place_id, o.audit_id || null, o.run_id, o.category, o.city, o.business || null, o.email || null, o.website || null, o.phone || null, o.score ?? null, o.grade || null, o.rank_label || null, o.rank_position ?? null, o.status, o.skip_reason || null, o.subject || null, o.body_text || null, o.unsub_token || null, o.sent_at || null, o.last_error || null, t, o.rating ?? null, o.reviews ?? null).run();
+    return;
+  } catch (e) { if (!/no column|has no column/i.test(String(e?.message || e))) throw e; } // migration 008 not applied yet
   await env.DB.prepare(`INSERT INTO outreach (id, place_id, audit_id, run_id, category, city, business, email, website, phone, score, grade, rank_label, rank_position, status, skip_reason, subject, body_text, unsub_token, sent_at, last_error, created_at, updated_at)
     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?22)`)
     .bind(o.id, o.place_id, o.audit_id || null, o.run_id, o.category, o.city, o.business || null, o.email || null, o.website || null, o.phone || null, o.score ?? null, o.grade || null, o.rank_label || null, o.rank_position ?? null, o.status, o.skip_reason || null, o.subject || null, o.body_text || null, o.unsub_token || null, o.sent_at || null, o.last_error || null, t).run();
@@ -254,9 +308,28 @@ export async function suppress(env, email, reason) {
 }
 
 // ---------- the daily run ----------
-export async function runDaily(env, { date = new Date(), limit, dryRun, timeBudgetMs } = {}) {
+// Cloudflare caps outbound requests per invocation (50 on the free Workers plan, far more on Workers Paid).
+// Count our own fetches and stop before starting a business we might not finish; the next tick resumes.
+const PER_BUSINESS_RESERVE = 20;
+function countFetches() {
+  const real = globalThis.fetch;
+  const c = { n: 0, restore: () => { if (globalThis.fetch === wrapped) globalThis.fetch = real; } };
+  const wrapped = (...a) => { c.n++; return real(...a); };
+  globalThis.fetch = wrapped;
+  return c;
+}
+const isLimitError = (e) => /too many subrequests|subrequest/i.test(String(e?.message || e));
+
+export async function runDaily(env, { date = new Date(), limit, dryRun, timeBudgetMs, subrequestLimit } = {}) {
   const t0 = Date.now();
   const deadline = t0 + Number(timeBudgetMs || env.OUTBOUND_TIME_BUDGET_MS || 25000);
+  const subLimit = Number(subrequestLimit || env.OUTBOUND_SUBREQUEST_LIMIT || 45);
+  const fc = countFetches();
+  try { return await runDailyInner(env, { date, limit, dryRun, deadline, subLimit, fc }); }
+  finally { fc.restore(); }
+}
+
+async function runDailyInner(env, { date, limit, dryRun, deadline, subLimit, fc }) {
   if (!hasDB(env)) throw new Error("D1 not bound");
   const plan = planFor(env, date);
   const live = env.OUTBOUND_ENABLED === "1" && !dryRun;
@@ -275,6 +348,7 @@ export async function runDaily(env, { date = new Date(), limit, dryRun, timeBudg
   for await (const biz of streamCandidates(env, plan)) {
     if (budget <= 0) break;
     if (Date.now() > deadline) { run.notes = `time budget reached with ${budget} left — the hourly tick continues`; break; }
+    if (fc.n + PER_BUSINESS_RESERVE > subLimit) { run.notes = `request budget reached (${fc.n}/${subLimit}) with ${budget} left — the hourly tick continues`; break; }
     run.found++;
     const prior = await alreadyContacted(env, biz.id, Number(env.OUTBOUND_RETRY_DAYS || 14));
     if (prior && prior.status === "queued" && prior.email && prior.body_text) {
@@ -290,7 +364,7 @@ export async function runDaily(env, { date = new Date(), limit, dryRun, timeBudg
       continue;
     }
     if (prior) { log.push({ business: biz.name, status: "skipped", reason: `already ${prior.status}` }); continue; }
-    const base = { id: id("ob"), place_id: biz.id, run_id: run.id, category: plan.category.key, city: plan.city.key, business: biz.name, website: biz.website, phone: biz.phone };
+    const base = { id: id("ob"), place_id: biz.id, run_id: run.id, category: plan.category.key, city: biz.market || plan.city.key, business: biz.name, website: biz.website, phone: biz.phone, rating: biz.rating, reviews: biz.reviews };
     const skip = async (reason) => { run.skipped++; log.push({ business: biz.name, status: "skipped", reason }); await insertOutreach(env, { ...base, status: "skipped", skip_reason: reason }); };
     if (!biz.website) { await skip("no website on listing"); continue; }
     let email = null;
@@ -299,7 +373,7 @@ export async function runDaily(env, { date = new Date(), limit, dryRun, timeBudg
     if (await suppressed(env, email)) { await skip("suppressed"); continue; }
 
     try {
-      const audit = await runAudit(env, biz.id);
+      const audit = await runAudit(env, biz.id, { category: plan.category.noun, categoryMatch: plan.category.match });
       const data = derived(audit);
       const rec = await saveAudit(env, { place_id: biz.id, query: biz.name, source: "outbound", score: audit.score, grade: audit.grade, data, full: cacheable(audit) });
       actionPlan(env, data.facts).then((p) => savePlan(env, rec.id, p)).catch(() => {});
@@ -319,10 +393,12 @@ export async function runDaily(env, { date = new Date(), limit, dryRun, timeBudg
         log.push({ business: biz.name, email, score: audit.score, rank: rank ? `${rank.position ?? "n/a"} for "${rank.label}"` : null, status: "queued (dry run)", subject: mail.subject, preview: mail.body.slice(0, 400) });
       }
     } catch (e) {
+      if (isLimitError(e)) { run.notes = `request limit hit at ${biz.name} — it will be retried on the next tick`; break; } // not recorded, so it's retried
       run.errors.push(`${biz.name}: ${String(e?.message || e).slice(0, 160)}`);
       await insertOutreach(env, { ...base, email, status: "error", last_error: String(e?.message || e).slice(0, 300) }).catch(() => {});
     }
   }
+  run.subrequests = fc.n;
   await saveRun(env, run);
   return { plan, run, log, live };
 }
@@ -358,6 +434,70 @@ async function saveRun(env, run) {
     .bind(run.id, run.day, run.mode, run.category || null, run.city || null, run.found, run.emailed, run.skipped, run.followups, JSON.stringify(run.errors || []), run.notes || null, run.started_at, run.finished_at).run();
 }
 
+// ---------- call sheet (Bobby dials these himself — never an AI voice) ----------
+// Businesses today's run found but couldn't email: no website, or no email on the site. Weakest presence first.
+const LINE_LABEL = { mobile: "mobile", landline: "landline", fixedVoip: "VoIP", nonFixedVoip: "VoIP (app)", tollFree: "toll-free", voip: "VoIP" };
+async function lineType(env, phone) {
+  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || env.CALLSHEET_LOOKUP === "0") return null;
+  const d = String(phone || "").replace(/\D/g, ""); const e164 = d.length === 10 ? `+1${d}` : d.length === 11 ? `+${d}` : null;
+  if (!e164) return null;
+  try {
+    const res = await fetch(`https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(e164)}?Fields=line_type_intelligence`, { headers: { authorization: `Basic ${btoa(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`)}` } });
+    if (!res.ok) return null;
+    const j = await res.json(); return j?.line_type_intelligence?.type || null;
+  } catch { return null; }
+}
+// Same findings, phrased for saying out loud to the owner.
+function spoken(r) {
+  if (!r.website) return "there's no website on your Google listing, so people searching can't check you out before they call";
+  if (r.reviews != null && r.reviews < 15) return `you've only got ${r.reviews} Google review${r.reviews === 1 ? "" : "s"}, and the businesses ranking above you usually have a lot more`;
+  if (r.rating != null && r.rating > 0 && r.rating < 4.3) return `your Google rating is sitting at ${Number(r.rating).toFixed(1)}, which costs you clicks`;
+  return "your website doesn't list an email, so anyone who finds you after hours has nowhere to send a request";
+}
+function weakSignals(r) {
+  const out = [];
+  if (!r.website) out.push("no website on their Google listing");
+  else if (/no email/.test(r.skip_reason || "")) out.push("website has no email address, so leads have to call or fill a form");
+  if (r.reviews != null && r.reviews < 15) out.push(`only ${r.reviews} Google review${r.reviews === 1 ? "" : "s"}`);
+  if (r.rating != null && r.rating > 0 && r.rating < 4.3) out.push(`${Number(r.rating).toFixed(1)}★ rating`);
+  return out;
+}
+export async function callSheet(env, day, { max = Number(env.CALLSHEET_MAX || 15) } = {}) {
+  if (!hasDB(env)) return [];
+  const runs = "SELECT id FROM outbound_runs WHERE day = ?1 AND mode = 'daily'";
+  let rows;
+  try {
+    rows = (await env.DB.prepare(`SELECT id, business, phone, website, city, category, skip_reason, rating, reviews FROM outreach WHERE run_id IN (${runs}) AND status = 'skipped' AND phone IS NOT NULL AND phone != '' AND (skip_reason LIKE 'no website%' OR skip_reason LIKE 'no email%')`).bind(day).all()).results || [];
+  } catch {
+    rows = ((await env.DB.prepare(`SELECT id, business, phone, website, city, category, skip_reason FROM outreach WHERE run_id IN (${runs}) AND status = 'skipped' AND phone IS NOT NULL AND phone != '' AND (skip_reason LIKE 'no website%' OR skip_reason LIKE 'no email%')`).bind(day).all()).results || []);
+  }
+  const ranked = rows.map((r) => ({ ...r, signals: weakSignals(r) }))
+    .sort((a, b) => (b.website ? 0 : 1) - (a.website ? 0 : 1) || b.signals.length - a.signals.length || (a.reviews ?? 999) - (b.reviews ?? 999))
+    .slice(0, max);
+  for (const r of ranked) {
+    r.line = await lineType(env, r.phone);
+    const mk = MARKETS[r.city];
+    const cat = Object.values(SCHEDULE).find((c) => c.key === r.category);
+    r.opener = `Hi, is this the owner of ${r.business}? This is Bobby Lloyd with Mesa Intelligence ${mk?.local ? mk.local : "out of Las Cruces, New Mexico"}. I was looking at your Google listing and noticed ${spoken(r)}. I do free listing audits for ${cat?.plural || "local businesses"}. Could I email you yours? It takes two minutes to go over.`;
+  }
+  return ranked;
+}
+function callSheetHtml(calls, esc) {
+  if (!calls?.length) return "";
+  const row = (r) => {
+    const mob = r.line === "mobile";
+    return `<tr style="vertical-align:top;border-top:1px solid #eee${mob ? ";color:#999" : ""}">
+      <td style="padding:6px 10px 6px 0"><b>${esc(r.business)}</b><br><span style="color:#777">${esc(MARKETS[r.city]?.label || r.city)}</span></td>
+      <td style="padding:6px 10px 6px 0;white-space:nowrap"><a href="tel:${esc(String(r.phone).replace(/[^\d+]/g, ""))}">${esc(r.phone)}</a><br><span style="color:${mob ? "#B23B1A" : "#777"}">${esc(LINE_LABEL[r.line] || "line type ?")}${mob ? " — skip unless clearly a business line" : ""}</span></td>
+      <td style="padding:6px 10px 6px 0">${esc(r.signals.join("; ") || "weak listing")}</td>
+    </tr>
+    <tr><td colspan="3" style="padding:0 0 8px;color:#444;font-size:12px"><i>"${esc(r.opener)}"</i></td></tr>`;
+  };
+  return `<h3 style="margin-top:22px">📞 Call sheet (${calls.length}) — businesses we couldn't email</h3>
+    <p style="font-size:12px;color:#555;margin:0 0 8px">You dial these yourself (no AI voice or autodialer — FCC treats AI voices as artificial under the TCPA). Call business landlines/VoIP; skip numbers flagged mobile unless they're clearly the business line. If someone asks not to be called again, don't call back. If they say yes, get their email and run their audit in /admin → Audit.</p>
+    <table style="border-collapse:collapse;font-size:13px;width:100%">${calls.map(row).join("")}</table>`;
+}
+
 // ---------- reporting ----------
 // Sends the day's digest once (guarded in rate_limits), so the noon tick can't double-send.
 export async function sendDigestOnce(env, date = new Date()) {
@@ -369,6 +509,7 @@ export async function sendDigestOnce(env, date = new Date()) {
     if (r) return { sent: false, reason: "already sent today" };
   } catch {}
   const s = await summary(env, 1);
+  if (s) s.calls = await callSheet(env, plan.day).catch((e) => { console.error("callsheet", e?.message || e); return []; });
   const ok = await emailDigest(env, s, plan);
   if (ok) { try { await env.DB.prepare("INSERT INTO rate_limits (k, window_start, count) VALUES (?1, ?2, 1) ON CONFLICT(k) DO UPDATE SET count = 1").bind(key, now()).run(); } catch {} }
   return { sent: ok };
@@ -391,18 +532,20 @@ export async function emailDigest(env, s, plan) {
   const esc = (x) => String(x ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   const sent = s.recent.filter((r) => ["sent", "followup_sent", "booked"].includes(r.status));
   const skipped = s.recent.filter((r) => r.status === "skipped");
-  const rows = sent.map((r) => `<tr><td style="padding:4px 10px 4px 0">${esc(r.business)}</td><td style="padding:4px 10px 4px 0">${esc(r.email)}</td><td style="padding:4px 10px 4px 0">${r.score ?? "—"}</td><td style="padding:4px 10px 4px 0">${r.rank_position ? `#${r.rank_position}` : "n/a"} ${esc(r.rank_label || "")}</td><td>${esc(r.status)}</td></tr>`).join("");
+  const rows = sent.map((r) => `<tr><td style="padding:4px 10px 4px 0">${esc(r.business)}${r.city && MARKETS[r.city] ? `<br><span style="color:#777">${esc(MARKETS[r.city].label)}</span>` : ""}</td><td style="padding:4px 10px 4px 0">${esc(r.email)}</td><td style="padding:4px 10px 4px 0">${r.score ?? "—"}</td><td style="padding:4px 10px 4px 0">${r.rank_position ? `#${r.rank_position}` : "n/a"} ${esc(r.rank_label || "")}</td><td>${esc(r.status)}</td></tr>`).join("");
   const html = `<div style="font-family:Helvetica,Arial,sans-serif;max-width:720px;color:#111">
-    <h2 style="margin:0 0 4px">Outbound — ${esc(plan.day)} · ${esc(plan.category?.label || plan.mode)} · ${esc(plan.city.label)} (week ${plan.week})</h2>
+    <h2 style="margin:0 0 4px">Outbound — ${esc(plan.day)} · ${esc(plan.category?.label || plan.mode)} · ${esc(plan.city.label)}${plan.overflow?.length ? ` (+ ${esc(plan.overflow.map((m) => m.label).join(", "))} if needed)` : ""}</h2>
     <p style="color:#555;margin:0 0 14px">${s.runs.map((r) => `${r.mode}: found ${r.found}, emailed ${r.emailed}, skipped ${r.skipped}, follow-ups ${r.followups}${JSON.parse(r.errors_json || "[]").length ? `, errors ${JSON.parse(r.errors_json).length}` : ""}`).join(" · ") || "no runs"}</p>
     ${s.bookings.length ? `<h3>📅 Booked calls</h3><ul>${s.bookings.map((b) => `<li><b>${esc(b.business || b.ob_business)}</b> — ${esc(b.name)} (${esc(b.email)}${b.phone ? `, ${esc(b.phone)}` : ""}) · ${new Date(b.start_at * 1000).toLocaleString("en-US", { timeZone: TZ, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</li>`).join("")}</ul>` : ""}
     <h3>Emails (${sent.length})</h3>
     ${rows ? `<table style="border-collapse:collapse;font-size:13px"><tr style="color:#777;text-align:left"><th>Business</th><th>Email</th><th>Score</th><th>Rank</th><th>Status</th></tr>${rows}</table>` : "<p>None.</p>"}
     ${skipped.length ? `<h3 style="margin-top:18px">Skipped (${skipped.length})</h3><p style="font-size:13px;color:#555">${skipped.map((r) => `${esc(r.business)} — ${esc(r.skip_reason)}`).join("<br>")}</p>` : ""}
     ${s.runs.some((r) => JSON.parse(r.errors_json || "[]").length) ? `<h3 style="color:#B23B1A">Errors</h3><pre style="font-size:12px;white-space:pre-wrap">${esc(s.runs.flatMap((r) => JSON.parse(r.errors_json || "[]")).join("\n"))}</pre>` : ""}
+    ${callSheetHtml(s.calls, esc)}
+    ${!env.OUTBOUND_POSTAL_ADDRESS ? `<p style="color:#B23B1A;font-size:12px;margin-top:16px">⚠️ OUTBOUND_POSTAL_ADDRESS isn't set — the footer says only "Las Cruces, NM". CAN-SPAM requires a valid postal address (a PO box or registered mailbox works). Add it in Cloudflare → Settings → Variables.</p>` : ""}
     <p style="color:#777;font-size:12px;margin-top:16px">Totals to date: ${Object.entries(s.totals).map(([k, v]) => `${k} ${v}`).join(" · ")}. Replies land in hello@ — anyone who writes back, mark them in /admin → Outbound.</p>
   </div>`;
   const res = await fetch("https://api.resend.com/emails", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${env.RESEND_API_KEY}` },
-    body: JSON.stringify({ from: env.LEAD_FROM || "Mesa Intelligence <hello@mesaintelligence.ai>", to: [env.LEAD_TO], subject: `Outbound ${plan.day}: ${sent.length} emailed${s.bookings.length ? `, ${s.bookings.length} booked` : ""} — ${plan.category?.label || plan.mode} · ${plan.city.label}`, html }) });
+    body: JSON.stringify({ from: env.LEAD_FROM || "Mesa Intelligence <hello@mesaintelligence.ai>", to: [env.LEAD_TO], subject: `Outbound ${plan.day}: ${sent.length} emailed${s.calls?.length ? `, ${s.calls.length} to call` : ""}${s.bookings.length ? `, ${s.bookings.length} booked` : ""} — ${plan.category?.label || plan.mode} · ${plan.city.label}`, html }) });
   return res.ok;
 }

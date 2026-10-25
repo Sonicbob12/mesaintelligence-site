@@ -43,7 +43,12 @@ export default function VoiceDemo() {
       client.on("agent_stop_talking", () => setAgentTalking(false));
       client.on("update", (u) => { if (Array.isArray(u?.transcript)) setLines(u.transcript.slice(-6)); });
       client.on("error", (e) => { setError(typeof e === "string" ? e : "Call error — please try again."); setStatus("error"); clearInterval(timerRef.current); client.stopCall(); });
-      await client.startCall({ accessToken: data.access_token });
+      await client.startCall({
+        accessToken: data.access_token,
+        ...(data.call_id ? { callId: data.call_id } : {}),
+        ...(data.transport ? { transport: data.transport } : {}),
+        ...(Array.isArray(data.ice_servers) && data.ice_servers.length ? { iceServers: data.ice_servers } : {}),
+      });
     } catch (e) {
       setError(e.message || "Could not start the call."); setStatus("error");
     }

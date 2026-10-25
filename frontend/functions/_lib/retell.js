@@ -166,8 +166,10 @@ export async function listNumbers(env) {
 }
 
 // A short-lived token so the website can start a browser call to this agent.
+// v3 (v2 support ended Oct 18 2026): same request body; the response is connection details only —
+// { call_id, access_token, transport, ice_servers } — which the browser passes to startCall().
 export async function createWebCall(env, tenant, metadata = {}) {
-  return retell(env, "POST", "/v2/create-web-call", {
+  return retell(env, "POST", "/v3/create-web-call", {
     agent_id: tenant.retell_agent_id,
     metadata: { tenant: tenant.id, ...metadata },
     retell_llm_dynamic_variables: { current_time: nowFor(tenant.timezone) },

@@ -147,8 +147,11 @@ function rankIssues(listing, siteChecks, vis, hasWebsite) {
 }
 
 // Runs the free audit live. Returns everything needed for display; nothing is persisted here.
-export async function runAudit(env, placeId) {
+// opts.category / opts.categoryMatch (outbound): when Google files the business under something that doesn't
+// match the industry we found it under (a law firm typed "consultant"), rank and compare it as opts.category.
+export async function runAudit(env, placeId, opts = {}) {
   const place = await placeDetails(env, placeId);
+  if (opts.category && opts.categoryMatch instanceof RegExp && !opts.categoryMatch.test(competitorCategory(place))) place.categoryOverride = opts.category;
   const [compRes, site] = await Promise.all([
     nearbyCompetitors(env, place, 5).catch((e) => { console.error("competitors", e?.message || e); return { comps: [], rank: null }; }),
     place.website ? checkWebsite(place.website, place.phone, { allowLocal: env.AUDIT_ALLOW_LOCAL_SITES === "1", address: place.address }).catch(() => ({ ok: false, checks: [], score: 0, error: "Could not be checked" })) : Promise.resolve(null),

@@ -1,4 +1,4 @@
-// POST /api/voice/web-call { tenant } → { access_token, call_id }
+// POST /api/voice/web-call { tenant } → { access_token, call_id, transport, ice_servers } (Retell v3)
 // Lets the website start a browser call (microphone) to a tenant's voice agent.
 // Rate-limited: 3 calls per visitor per hour, and a global daily cap for demo tenants.
 
@@ -23,7 +23,7 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const call = await createWebCall(env, tenant, { ip, source: "site" });
-    return json({ access_token: call.access_token, call_id: call.call_id });
+    return json({ access_token: call.access_token, call_id: call.call_id, transport: call.transport || null, ice_servers: call.ice_servers || null });
   } catch (e) {
     console.error("web-call", e?.message || e);
     return json({ detail: "Could not start the call right now." }, 502);
