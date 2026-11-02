@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2, Check, Mountain } from "lucide-react";
+import { Loader2, Check, Mountain, ChevronDown } from "lucide-react";
+import { HEARD_OPTIONS } from "@/lib/heard";
 
 // /plan — the public pricing page for the Local Growth Plan. Buyable without an audit (email → Stripe Checkout).
 // Also the natural landing for the nav "Pricing" link, LinkedIn posts and in-person conversations.
@@ -43,6 +44,7 @@ export default function PlanPage() {
   const [h, setH] = useState(null);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [heard, setHeard] = useState("");
   const [code, setCode] = useState(() => { try { return new URLSearchParams(window.location.search).get("code") || ""; } catch { return ""; } });
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
@@ -53,7 +55,7 @@ export default function PlanPage() {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setErr("Enter your email to start — your dashboard link goes there."); return; }
     setBusy(interval); setErr("");
     try {
-      const res = await fetch("/api/plan/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, name, interval, code: code || undefined }) });
+      const res = await fetch("/api/plan/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, name, interval, code: code || undefined, heard: heard || undefined }) });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.detail || "Couldn't start checkout.");
       window.location.href = d.url;
@@ -97,6 +99,13 @@ export default function PlanPage() {
                   <>
                     <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Business name" className={inputCls} />
                     <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (your dashboard link goes here)" className={inputCls} data-testid="plan-email" />
+                    <div className="relative">
+                      <select value={heard} onChange={(e) => setHeard(e.target.value)} aria-label="How did you hear about us? (optional)" className={`${inputCls} appearance-none cursor-pointer pr-12 ${heard ? "" : "text-[#9E9AA3]"}`} data-testid="plan-heard">
+                        <option value="" className="bg-[#14161A] text-[#9E9AA3]">How did you hear about us? (optional)</option>
+                        {HEARD_OPTIONS.map((o) => <option key={o} value={o} className="bg-[#14161A] text-[#F5F3EF]">{o}</option>)}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-[#9E9AA3] absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.5} />
+                    </div>
                     {code && h?.plan_founding && <p className="text-xs text-[#E5A93C]">Founding-client pricing applied: $149/month for your first 6 months, no setup fee.</p>}
                     <button onClick={() => go("month")} disabled={Boolean(busy)} className={primary} data-testid="plan-monthly">{busy === "month" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} {h?.plan_trial_days ? `Start free for ${h.plan_trial_days} days` : `Start the plan — $${monthly}/month`}</button>
                     <button onClick={() => go("year")} disabled={Boolean(busy)} className={ghost} data-testid="plan-annual">{busy === "year" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Pay yearly — ${annual} (no setup fee)</button>

@@ -42,6 +42,7 @@ export async function onRequestGet({ env }) {
     plan_checkins: env.PLAN_CHECKINS !== "0",
     plan_setup_fee: Boolean(env.STRIPE_SETUP_PRICE_ID),
     plan_founding: Boolean(env.STRIPE_FOUNDING_PRICE_ID && env.FOUNDING_CODE),
+    attribution: true, // ?utm_ cookie → checkout metadata → plans row (_lib/attribution.js)
     voice_auto_provision: Boolean(env.RETELL_API_KEY) && env.VOICE_AUTO_PROVISION !== "0",
     admin: Boolean(env.ADMIN_TOKEN),
     db,

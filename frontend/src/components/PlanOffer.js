@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown } from "lucide-react";
+import { HEARD_OPTIONS } from "@/lib/heard";
 
 // The subscription upsell shown on every audit report page. Starts Stripe Checkout (subscription).
 const primary = "font-mono text-[11px] uppercase tracking-[0.2em] px-6 py-4 bg-[#D96B43] text-[#0B0C0E] hover:bg-[#E5A93C] transition-colors disabled:opacity-40 flex items-center justify-center gap-2";
@@ -17,12 +18,13 @@ export default function PlanOffer({ auditId, shareKey, pro, business, outreachId
   const [h, setH] = useState(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
+  const [heard, setHeard] = useState("");
   useEffect(() => { fetch("/api/health").then((r) => r.json()).then(setH).catch(() => {}); }, []);
   if (!h?.plan) return null;
   const go = async (interval) => {
     setBusy(interval); setErr("");
     try {
-      const res = await fetch("/api/plan/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a: auditId, k: shareKey, interval, o: outreachId || "" }) });
+      const res = await fetch("/api/plan/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a: auditId, k: shareKey, interval, o: outreachId || "", heard: heard || undefined }) });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.detail || "Couldn't start checkout.");
       window.location.href = d.url;
@@ -41,6 +43,15 @@ export default function PlanOffer({ auditId, shareKey, pro, business, outreachId
         </div>
         <div className="md:col-span-5 flex flex-col justify-center gap-3">
           <div><span className="font-display text-5xl font-light">${monthly}</span><span className="text-sm text-[#9E9AA3]"> / month</span></div>
+          {!outreachId && (
+            <div className="relative">
+              <select value={heard} onChange={(e) => setHeard(e.target.value)} aria-label="How did you hear about us? (optional)" className={`w-full bg-transparent border border-white/12 px-4 py-3 pr-10 text-sm font-light appearance-none cursor-pointer focus:outline-none focus:border-[#D96B43] ${heard ? "" : "text-[#9E9AA3]"}`} data-testid="plan-offer-heard">
+                <option value="" className="bg-[#14161A] text-[#9E9AA3]">How did you hear about us? (optional)</option>
+                {HEARD_OPTIONS.map((o) => <option key={o} value={o} className="bg-[#14161A] text-[#F5F3EF]">{o}</option>)}
+              </select>
+              <ChevronDown className="w-4 h-4 text-[#9E9AA3] absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.5} />
+            </div>
+          )}
           <button onClick={() => go("month")} disabled={Boolean(busy)} className={primary} data-testid="plan-monthly">{busy === "month" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Start the plan — monthly</button>
           <button onClick={() => go("year")} disabled={Boolean(busy)} className={ghost} data-testid="plan-annual">{busy === "year" ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Pay yearly — ${annual} (${Math.round(annual / 12)}/mo)</button>
           <p className="text-[11px] text-[#9E9AA3]">Cancel any time from your dashboard. Free for 14 days, card on file. Your phone line is live the minute you sign up. Secure checkout by Stripe. <a href="/plan" className="text-[#E5A93C]">Full details</a>.</p>

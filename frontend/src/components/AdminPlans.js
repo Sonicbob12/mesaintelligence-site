@@ -5,6 +5,9 @@ import { Loader2 } from "lucide-react";
 const fmt = (s) => (s ? new Date(s * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—");
 const btn = "font-mono text-[11px] uppercase tracking-[0.2em] px-4 py-2.5 border border-white/15 hover:border-[#E5A93C] transition-colors disabled:opacity-40 flex items-center gap-2";
 const COLOR = { active: "#8EA89D", past_due: "#E5A93C", canceled: "#D96B43", pending: "#9E9AA3" };
+// Where the signup came from: the ?utm_ link they arrived on (video slug first), else their "how did you hear" answer.
+const sourceOf = (p) => p.utm_source ? `${p.utm_source}${p.utm_content ? ` · ${p.utm_content}` : p.utm_campaign ? ` · ${p.utm_campaign}` : ""}` : p.heard_about ? `said: ${p.heard_about}` : "";
+const sourceKey = (p) => (p.utm_source || (p.heard_about ? `said ${p.heard_about}` : "untracked")).toLowerCase();
 
 export default function AdminPlans({ call }) {
   const [d, setD] = useState(null); const [err, setErr] = useState(""); const [busy, setBusy] = useState("");
@@ -12,6 +15,7 @@ export default function AdminPlans({ call }) {
   useEffect(() => { load(); }, [load]);
   const act = async (body, k) => { setBusy(k); setErr(""); try { await call("/admin/plans", { method: "POST", body: JSON.stringify(body) }); load(); } catch (e) { setErr(e.message); } setBusy(""); };
   const mrr = (d?.plans || []).filter((p) => p.status === "active").reduce((a, p) => a + (p.interval === "year" ? 199 : 249) + (p.usage && !p.usage.trialing ? p.usage.overage_usd || 0 : 0), 0);
+  const sources = Object.entries((d?.plans || []).reduce((a, p) => { const k = sourceKey(p); a[k] = (a[k] || 0) + 1; return a; }, {})).sort((x, y) => y[1] - x[1]);
   return (
     <section className="border border-white/10 bg-[#14161A] p-6 space-y-4" data-testid="admin-plans">
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
@@ -23,16 +27,18 @@ export default function AdminPlans({ call }) {
         {d?.pending_voice?.length > 0 && <button className={btn} disabled={Boolean(busy)} onClick={() => act({ run_voice_retry: true }, "voice")}>{busy === "voice" && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Retry {d.pending_voice.length} voice line{d.pending_voice.length === 1 ? "" : "s"}</button>}
         <button className={btn} disabled={Boolean(busy)} onClick={() => act({ run_audits: true }, "audits")}>{busy === "audits" && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Run due monthly audits</button>
       </div>
+      {sources.length > 0 && <div className="text-xs text-[#9E9AA3]">Signups by source: {sources.map(([k, n]) => `${k} ${n}`).join(" · ")}</div>}
       {err && <div className="text-sm text-[#D96B43]">{err}</div>}
       {d && !d.plans?.length && <div className="text-sm text-[#9E9AA3]">No subscribers yet. The offer shows on every audit report page.</div>}
       {d?.plans?.length > 0 && (
         <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead><tr className="text-left text-[#9E9AA3] font-mono text-[10px] uppercase tracking-[0.15em]"><th className="font-normal pb-2 pr-3">Since</th><th className="font-normal pr-3">Business</th><th className="font-normal pr-3">Contact</th><th className="font-normal pr-3">Status</th><th className="font-normal pr-3">Minutes</th><th className="font-normal pr-3">Score</th><th className="font-normal pr-3">Next audit</th><th className="font-normal pr-3">Setup</th><th className="font-normal">Links</th></tr></thead>
+          <thead><tr className="text-left text-[#9E9AA3] font-mono text-[10px] uppercase tracking-[0.15em]"><th className="font-normal pb-2 pr-3">Since</th><th className="font-normal pr-3">Business</th><th className="font-normal pr-3">Contact</th><th className="font-normal pr-3">Source</th><th className="font-normal pr-3">Status</th><th className="font-normal pr-3">Minutes</th><th className="font-normal pr-3">Score</th><th className="font-normal pr-3">Next audit</th><th className="font-normal pr-3">Setup</th><th className="font-normal">Links</th></tr></thead>
           <tbody>{d.plans.map((p) => (
             <tr key={p.id} className="border-t border-white/8 align-top">
               <td className="py-2 pr-3 whitespace-nowrap text-[#9E9AA3]">{fmt(p.created_at)}</td>
               <td className="py-2 pr-3">{p.business}<div className="text-[10px] text-[#9E9AA3]">{p.tenant_id} · {p.interval || "month"}</div></td>
               <td className="py-2 pr-3 max-w-[220px] truncate">{p.name} · {p.email}{p.phone ? ` · ${p.phone}` : ""}</td>
+              <td className="py-2 pr-3 max-w-[200px]">{sourceOf(p) || <span className="text-[#9E9AA3]">—</span>}{p.utm_source && p.heard_about ? <div className="text-[10px] text-[#9E9AA3]">said: {p.heard_about}</div> : null}{p.utm_medium ? <div className="text-[10px] text-[#9E9AA3]">{p.utm_medium}{p.landing_path ? ` → ${p.landing_path}` : ""}</div> : null}</td>
               <td className="py-2 pr-3" style={{ color: COLOR[p.status] || "#F5F3EF" }}>{p.status}</td>
               <td className="py-2 pr-3 whitespace-nowrap">{p.usage ? <span style={{ color: p.usage.minutes > p.usage.included ? "#E5A93C" : p.usage.pct >= 80 ? "#D96B43" : "#F5F3EF" }}>{p.usage.minutes}/{p.usage.included}{p.usage.overage ? ` (+${p.usage.overage}${p.usage.trialing ? " trial" : ` = $${p.usage.overage_usd}`})` : ""}</span> : "—"}{p.usage?.trialing ? <div className="text-[10px] text-[#9E9AA3]">trialing</div> : null}{d.pending_voice?.includes(p.id) ? <div className="text-[10px] text-[#E5A93C]">no number yet · retrying</div> : null}</td>
               <td className="py-2 pr-3">{p.last_score ?? "—"}</td>

@@ -22,6 +22,7 @@ import { sendSms, twilioConfigured, toE164 } from "./twilio.js";
 import { provisionVoiceLine, retell } from "./retell.js";
 import { hasDB, id, now, safeJSON } from "./db.js";
 import { ensureUsageSchema, periodFromSubscription } from "./usage.js";
+import { attributionMetadata, savePlanAttribution, sourceLine } from "./attribution.js";
 
 export const planConfigured = (env) => Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PLAN_PRICE_ID);
 export const planPrice = (env) => Number(env.PLAN_PRICE_USD || 249);
@@ -44,7 +45,7 @@ const slug = (s) => String(s || "biz").toLowerCase().replace(/&/g, " and ").repl
 // ---------- checkout ----------
 // Env (all optional): STRIPE_SETUP_PRICE_ID (one-time setup fee, added to monthly checkouts; waived on annual),
 // STRIPE_FOUNDING_PRICE_ID + FOUNDING_CODE (founding-client monthly price, unlocked by ?code=), PLAN_TRIAL_DAYS (14).
-export async function createPlanCheckout(env, { audit, email, name, interval = "month", outreachId, code }) {
+export async function createPlanCheckout(env, { audit, email, name, interval = "month", outreachId, code, attribution, heard }) {
   const founding = Boolean(code && env.FOUNDING_CODE && code.trim().toLowerCase() === env.FOUNDING_CODE.toLowerCase() && env.STRIPE_FOUNDING_PRICE_ID);
   const annual = interval === "year" && env.STRIPE_PLAN_ANNUAL_PRICE_ID;
   const price = founding ? env.STRIPE_FOUNDING_PRICE_ID : annual ? env.STRIPE_PLAN_ANNUAL_PRICE_ID : env.STRIPE_PLAN_PRICE_ID;
@@ -53,6 +54,9 @@ export async function createPlanCheckout(env, { audit, email, name, interval = "
   const trialDays = Number(env.PLAN_TRIAL_DAYS ?? 14);
   const line_items = [{ price, quantity: 1 }];
   if (env.STRIPE_SETUP_PRICE_ID && !annual && !founding) line_items.push({ price: env.STRIPE_SETUP_PRICE_ID, quantity: 1 });
+  // Which video/post sent them (cookie) + "how did you hear" — attribution.js. Only keys that are set.
+  const attr = attributionMetadata(attribution, heard);
+  const subAttr = Object.fromEntries(Object.entries(attr).filter(([k]) => ["utm_source", "utm_medium", "utm_content", "heard_about"].includes(k)));
   const body = {
     mode: "subscription",
     line_items,
@@ -60,9 +64,9 @@ export async function createPlanCheckout(env, { audit, email, name, interval = "
     cancel_url: audit ? `${reportLink(env, audit.id, audit.share_key)}` : `${site(env)}/#audit`,
     customer_email: email || audit?.contact_email || undefined,
     client_reference_id: audit?.id || undefined,
-    metadata: { kind: "plan", audit_id: audit?.id || "", place_id: audit?.place_id || "", business: business.slice(0, 200), outreach_id: outreachId || "", name: String(name || audit?.contact_name || "").slice(0, 120), founding: founding ? "1" : "" },
+    metadata: { kind: "plan", audit_id: audit?.id || "", place_id: audit?.place_id || "", business: business.slice(0, 200), outreach_id: outreachId || "", name: String(name || audit?.contact_name || "").slice(0, 120), founding: founding ? "1" : "", ...attr },
     subscription_data: {
-      metadata: { kind: "plan", audit_id: audit?.id || "", business: business.slice(0, 200), founding: founding ? "1" : "" },
+      metadata: { kind: "plan", audit_id: audit?.id || "", business: business.slice(0, 200), founding: founding ? "1" : "", ...subAttr },
       ...(trialDays > 0 ? { trial_period_days: trialDays, trial_settings: { end_behavior: { missing_payment_method: "cancel" } } } : {}),
     },
     // Card is collected up front so the trial converts without a second step.
@@ -121,6 +125,8 @@ export async function provisionPlan(env, session, { waitUntil } = {}) {
   await env.DB.prepare(`INSERT INTO plans (id, tenant_id, audit_id, place_id, business, name, email, phone, website, stripe_customer, stripe_subscription, stripe_session, price_id, interval, status, portal_token, onboarded, settings_json, next_audit_at, last_audit_id, last_score, created_at, updated_at)
     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?22)`)
     .bind(plan.id, plan.tenant_id, plan.audit_id, plan.place_id, plan.business, plan.name, plan.email, plan.phone || null, plan.website, plan.stripe_customer, plan.stripe_subscription, plan.stripe_session, null, null, plan.status, plan.portal_token, 0, JSON.stringify(plan.settings), plan.next_audit_at, plan.last_audit_id, plan.last_score, now()).run();
+  // Which video/post sent them — never blocks the signup.
+  try { await savePlanAttribution(env, plan.id, m); } catch (e) { console.error("plan attribution", e?.message || e); }
   if (m.outreach_id) await env.DB.prepare("UPDATE outreach SET status = 'client', updated_at = ?2 WHERE id = ?1").bind(m.outreach_id, now()).run().catch(() => {});
 
   // 3) voice line — agent + a local number, no human step. Failure never blocks the signup; the alert tells Bobby.
@@ -137,7 +143,7 @@ export async function provisionPlan(env, session, { waitUntil } = {}) {
     sendMail(env, { to: [email], reply_to: env.LEAD_TO, subject: `Welcome to the Local Growth Plan — ${business}`,
       text: `Hi ${name.split(" ")[0] || "there"},\n\nYou're in. Your plan dashboard is here (bookmark it, it's your private link):\n${link}\n\nTake 5 minutes there to finish setup: confirm your hours and services, paste your Google review link, and grab the one-line chat widget for your website.\n\nWhat's running from today:\n• Monthly re-audit of your Google listing, website and search rank, with a "what changed" email\n• One-tap review requests to customers after each job\n• A 24/7 chat agent for your website that books and captures leads, sent straight to ${email}\n${pretty ? `• Your AI phone line is live now at ${pretty}. Call it and hear it. To put it to work, forward your business line to it when you can't answer (most carriers: dial *72 then ${pretty.replace(/\D/g, "").replace(/^1/, "")}, or set "conditional forwarding" in your phone's settings). Every call it takes is emailed to you, and bookings text the customer a confirmation.` : "• Voice line: I'm finishing your number by hand and will email it within 1 business day"}\n\nReply to this email any time — it comes straight to me.\n\nBobby Lloyd\nMesa Intelligence · Las Cruces, NM · (575) 254-1185` }),
     env.LEAD_TO ? sendMail(env, { to: [env.LEAD_TO], reply_to: email || undefined, subject: `💵 NEW PLAN: ${business} — ${name} <${email}>`,
-      text: `${business}\n${name} <${email}>${phone ? ` · ${phone}` : ""}\nTenant: ${tenantId}\nPortal: ${link}\nStripe customer: ${session.customer || "—"} · subscription: ${session.subscription || "—"}\nAudit: ${auditId ? reportLink(env, auditId, audit?.share_key) : "—"}\n\nVoice line: ${pretty ? `LIVE at ${pretty} (auto-provisioned)` : `NOT provisioned — ${voiceError || "auto-provision off"} → set up in /admin → Voice`}\nTO DO (you): confirm hours/services in /admin → Tenants; call the line once to check the greeting.` }) : Promise.resolve(),
+      text: `${business}\n${name} <${email}>${phone ? ` · ${phone}` : ""}\nTenant: ${tenantId}\nPortal: ${link}\nStripe customer: ${session.customer || "—"} · subscription: ${session.subscription || "—"}\nSource: ${m.outreach_id ? "outbound email" : sourceLine(m)}\nAudit: ${auditId ? reportLink(env, auditId, audit?.share_key) : "—"}\n\nVoice line: ${pretty ? `LIVE at ${pretty} (auto-provisioned)` : `NOT provisioned — ${voiceError || "auto-provision off"} → set up in /admin → Voice`}\nTO DO (you): confirm hours/services in /admin → Tenants; call the line once to check the greeting.` }) : Promise.resolve(),
   ]).catch((e) => console.error("plan mails", e?.message || e));
   if (typeof waitUntil === "function") waitUntil(mails); else await mails;
   return plan;

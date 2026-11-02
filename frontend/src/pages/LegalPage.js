@@ -5,7 +5,7 @@ import { Link, useLocation } from "react-router-dom";
 // no selling/sharing of SMS opt-in data, STOP/HELP).
 
 const BRAND = "Mesa Intelligence LLC";
-const UPDATED = "October 17, 2026";
+const UPDATED = "November 1, 2026";
 const h2 = "font-display text-xl sm:text-2xl font-light tracking-tight mt-12 mb-3";
 const p = "text-[#C9C5BF] font-light leading-relaxed mb-4";
 const li = "text-[#C9C5BF] font-light leading-relaxed mb-2 ml-5 list-disc";
@@ -39,6 +39,7 @@ function Privacy() {
         <li className={li}>Information from our clients' customers: when a business uses our tools, their customers' names, phone numbers, and appointment details pass through our systems so we can book appointments, send confirmations, and notify the business.</li>
         <li className={li}>Public listing data: for the free Local Discovery audit we retrieve public business information from Google Maps for the business you ask us to audit.</li>
         <li className={li}>Technical data: IP address and basic request logs, used for security and rate limiting.</li>
+        <li className={li}>Referral data: if you arrive through a tagged link (for example, the link under one of our YouTube videos), a small first-party cookie remembers which link it was for 30 days. If you sign up, that link and your optional answer to "How did you hear about us?" are saved with your account so we know which videos and posts help people. We use no third-party advertising trackers.</li>
       </ul>
 
       <h2 className={h2}>How we use it</h2>
@@ -56,7 +57,7 @@ function Privacy() {
       <h2 className={h2}>Who we share data with</h2>
       <ul>
         <li className={li}>The business you are communicating with (our client), which receives your messages, bookings, and contact details.</li>
-        <li className={li}>Service providers that run our infrastructure: Cloudflare (hosting and database), Anthropic (AI language model), Retell AI (voice calls), Twilio (text messaging), Google (calendar and spreadsheets for our clients), Resend (email), and Google Maps Platform (public listing data). They process data only to provide their service to us.</li>
+        <li className={li}>Service providers that run our infrastructure: Cloudflare (hosting and database), Anthropic (AI language model), Retell AI (voice calls), Twilio (text messaging), Google (calendar and spreadsheets for our clients), Resend (email), Stripe (payments and subscriptions), and Google Maps Platform (public listing data). They process data only to provide their service to us.</li>
         <li className={li}>Authorities when required by law.</li>
       </ul>
       <p className={p}>We never sell personal information.</p>

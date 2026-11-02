@@ -1,6 +1,10 @@
 // Per-route <title>/description/canonical for the single-page app, and noindex for private pages.
 // The React routes all share public/index.html, so without this every URL would carry the homepage title.
 // Static landing pages (public/<slug>/index.html) and /api are passed through untouched.
+// Any page opened with ?utm_… also gets the 30-day attribution cookie (_lib/attribution.js), so a trial
+// started later can be credited to the video or post that sent the visitor.
+
+import { attributionFromUrl, attributionCookie } from "./_lib/attribution.js";
 
 const META = {
   "/plan": {
@@ -26,9 +30,10 @@ export async function onRequest({ request, next }) {
   const type = res.headers.get("content-type") || "";
   if (!type.includes("text/html")) return res;
 
+  const attr = attributionFromUrl(request.url);
   const isPrivate = PRIVATE.some((re) => re.test(path));
   const meta = META[path];
-  if (!isPrivate && !meta) return res; // homepage + static landing pages already carry their own tags
+  if (!isPrivate && !meta) return attr ? withAttribution(res, attr) : res; // homepage + static landing pages carry their own tags
 
   const out = new HTMLRewriter();
   if (meta) {
@@ -44,10 +49,17 @@ export async function onRequest({ request, next }) {
     out.on("head", { element(e) { e.append('<meta name="robots" content="noindex,nofollow">', { html: true }); } });
   }
   const rewritten = out.transform(res);
+  let final = rewritten;
   if (isPrivate) {
     const h = new Headers(rewritten.headers);
     h.set("X-Robots-Tag", "noindex, nofollow");
-    return new Response(rewritten.body, { status: rewritten.status, headers: h });
+    final = new Response(rewritten.body, { status: rewritten.status, headers: h });
   }
-  return rewritten;
+  return attr ? withAttribution(final, attr) : final;
+}
+
+function withAttribution(res, attr) {
+  const h = new Headers(res.headers);
+  h.append("Set-Cookie", attributionCookie(attr));
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
 }
