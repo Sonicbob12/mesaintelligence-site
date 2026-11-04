@@ -89,7 +89,12 @@ function page(pg) {
       <div><h2>${esc(s.h)}</h2></div>
       <div>${s.p ? s.p.map((x) => `<p>${esc(x)}</p>`).join("") : ""}${s.list ? `<ul class="ticks">${s.list.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>
     </div></section>`).join("");
-  const related = PAGES.filter((p) => p.slug !== pg.slug).map((p) => `<a href="/${p.slug}/">${esc(p.h1)}</a>`).join("");
+  // Trade pages link to their own trade's pages plus the other trade hubs; everything else links to the non-city pages.
+  const isCity = (p) => p.trade && /-answering-service-/.test(p.slug);
+  const relatedPages = pg.trade
+    ? PAGES.filter((p) => p.slug !== pg.slug && (p.trade === pg.trade || (p.trade && !isCity(p)) || p.slug === "free-google-business-profile-audit"))
+    : PAGES.filter((p) => p.slug !== pg.slug && !isCity(p));
+  const related = relatedPages.map((p) => `<a href="/${p.slug}/">${esc(p.h1)}</a>`).join("");
   const cta = pg.cta || { label: "Run my free audit", href: "/#audit" };
   return `<!doctype html>
 <html lang="en">
@@ -127,16 +132,16 @@ function page(pg) {
   ${sections}
   <section class="block"><div class="wrap grid">
     <div><h2>Hear it for yourself</h2><p class="mute">A live AI receptionist set up for a sample HVAC company. Ask a question, try to book a visit.</p></div>
-    <div class="demo"><div class="eyebrow">Demo line</div><a class="num" href="tel:${SITE.demoE164}">${SITE.demo}</a><p class="mute" style="margin-top:8px">Available 24/7. Your version answers with your business name, hours and services.</p></div>
+    <div class="demo"><div class="eyebrow">Demo line</div><a class="num" href="tel:${SITE.demoE164}">${SITE.demo}</a><p class="mute" style="margin-top:8px">Available 24/7. Your version answers with your business name, hours and services.</p><p style="margin-top:14px"><a href="/#audit">Hear it answer as your business →</a> <span class="mute">Run the free audit, then press “Call it” on your report.</span></p></div>
   </div></section>
   <section class="block"><div class="wrap">
     <h2>What it costs</h2>
     <div class="price">
       <div><span class="eyebrow">Listing audit</span><b>Free</b><span class="mute">Score, rank and top 3 problems in 15 seconds.</span></div>
       <div><span class="eyebrow">Pro report</span><b>$${SITE.price.pro}</b><span class="mute">Full report and 30-day plan. Credited toward the plan.</span></div>
-      <div class="hl"><span class="eyebrow">Local Growth Plan</span><b>$${SITE.price.plan}<span class="mute" style="font-size:15px"> / month</span></b><span class="mute">or $${SITE.price.annual.toLocaleString("en-US")} a year. Month to month, cancel any time.</span></div>
+      <div class="hl"><span class="eyebrow">Local Growth Plan</span><b>$${SITE.price.plan}<span class="mute" style="font-size:15px"> / month</span></b><span class="mute">after a 14-day free trial, or $${SITE.price.annual.toLocaleString("en-US")} a year. One-time $299 setup on monthly (waived on annual). Cancel any time.</span></div>
     </div>
-    <div class="ctas"><a class="btn primary" href="/plan">Start the plan</a><a class="btn" href="/book">Book a 15-minute call</a></div>
+    <div class="ctas"><a class="btn primary" href="/plan">Start the free trial</a><a class="btn" href="/book">Book a 15-minute call</a></div>
   </div></section>
   <section class="block"><div class="wrap grid">
     <div><h2>Questions</h2></div>
@@ -184,6 +189,7 @@ Disallow: /portal
 Disallow: /audit/
 Disallow: /api/
 Disallow: /embed
+Disallow: /hear
 
 Sitemap: ${SITE.url}/sitemap.xml
 `);

@@ -19,7 +19,7 @@ const META = {
   "/terms": { title: "Terms & Conditions | Mesa Intelligence", description: "Terms and conditions for Mesa Intelligence LLC services and SMS program." },
   "/sms": { title: "SMS Program | Mesa Intelligence", description: "How Mesa Intelligence uses text messages: appointment confirmations and reminders. Reply STOP to opt out." },
 };
-const PRIVATE = [/^\/admin/, /^\/portal/, /^\/audit\//, /^\/embed/];
+const PRIVATE = [/^\/admin/, /^\/portal/, /^\/audit\//, /^\/embed/, /^\/hear/];
 
 export async function onRequest({ request, next }) {
   const url = new URL(request.url);

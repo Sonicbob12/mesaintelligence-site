@@ -22,6 +22,7 @@ import { runAudit, derived, cacheable, saveAudit, actionPlan, savePlan } from ".
 import { runModelCollect } from "./anthropic.js";
 import { hasDB, id, now } from "./db.js";
 import { localDate } from "./time.js";
+import { demoLink, demoLinesEnabled } from "./prospect_demo.js";
 
 const TZ = "America/Denver";
 // Categories. Mon–Thu default to the trades (OUTBOUND_SCHEDULE="hvac,plumbing,electrical,roofing" overrides the
@@ -250,10 +251,12 @@ export async function composeEmail(env, { plan, biz, audit, links }) {
   };
   const system = [
     "You write short cold emails for Bobby Lloyd, founder of Mesa Intelligence in Las Cruces NM. Bobby ran a landscaping company and works in construction; he builds an AI phone line for trades businesses. Follow bobby_location exactly when describing where Bobby is.",
-    "Write to the owner. Plain text. 80-120 words. No subject line in the body. No bullet points, no markdown, no exclamation marks, no hype words (game-changer, skyrocket, unlock, revolutionize). Sound like a tradesman who built something useful, not a marketer.",
-    "Structure: 1) one sentence with their most striking real number from the audit (rank, reviews gap, or no website) — specific, not flattering; mention the free summary once with the placeholder {REPORT_LINK}. 2) one sentence on what that costs them in missed calls, in the words of industry_angle. 3) two sentences on the offer: what the line does and the free trial, taken from `offer` — then the placeholder {BOOK_LINK} as the way to start (a 15-minute call where Bobby sets it up on a number they can hear). 4) one line: who Bobby is (per bobby_location, mention he ran a landscaping company). 5) sign-off: Bobby.",
+    "Write to the owner. Plain text. 90-130 words. No subject line in the body. No bullet points, no markdown, no exclamation marks, no hype words (game-changer, skyrocket, unlock, revolutionize). Sound like a tradesman who built something useful, not a marketer.",
+    links.demo
+      ? "Structure: 1) Open with the demo: Bobby already set up a demo phone line that answers as their business — they can hear it answer a call as their business in one click at the placeholder {DEMO_LINK}. One or two sentences, plain, no hype. 2) one sentence with their most striking real number from the audit (rank, reviews gap, or no website) — specific, not flattering — and the free summary once with the placeholder {REPORT_LINK}. 3) one sentence on what missed calls cost them, in the words of industry_angle. 4) one or two sentences on the offer from `offer` — the free trial on their real number — then the placeholder {BOOK_LINK} as the way to start (a 15-minute call). 5) one line: who Bobby is (per bobby_location, mention he ran a landscaping company). 6) sign-off: Bobby."
+      : "Structure: 1) one sentence with their most striking real number from the audit (rank, reviews gap, or no website) — specific, not flattering; mention the free summary once with the placeholder {REPORT_LINK}. 2) one sentence on what that costs them in missed calls, in the words of industry_angle. 3) two sentences on the offer: what the line does and the free trial, taken from `offer` — then the placeholder {BOOK_LINK} as the way to start (a 15-minute call where Bobby sets it up on a number they can hear). 4) one line: who Bobby is (per bobby_location, mention he ran a landscaping company). 5) sign-off: Bobby.",
     "Use only the facts given. Never invent numbers. If rank.position is null say they do not appear in the top 20 for that search.",
-    'Respond with JSON only: {"subject": "max 7 words, specific, lowercase except names, no clickbait", "body": "the email with {REPORT_LINK} and {BOOK_LINK} placeholders"}',
+    `Respond with JSON only: {"subject": "max 7 words, specific, lowercase except names, no clickbait${links.demo ? " — mention the demo line, e.g. 'i set up a phone line for <business>'" : ""}", "body": "the email with ${links.demo ? "{DEMO_LINK}, " : ""}{REPORT_LINK} and {BOOK_LINK} placeholders"}`,
   ].join("\n");
   let subject = "", body = "";
   try {
@@ -263,15 +266,17 @@ export async function composeEmail(env, { plan, biz, audit, links }) {
     const j = m ? JSON.parse(m[0]) : null;
     subject = String(j?.subject || "").slice(0, 90); body = String(j?.body || "");
   } catch (e) { console.error("compose", e?.message || e); }
-  if (!body || !body.includes("{BOOK_LINK}")) {
+  if (!body || !body.includes("{BOOK_LINK}") || (links.demo && !body.includes("{DEMO_LINK}"))) {
     const r = rank ? (rank.position ? `you're #${rank.position} of ${rank.results} when someone searches "${rank.label}"` : `you don't show up in the top 20 when someone searches "${rank.label}"`) : `your listing scores ${audit.score}/100`;
-    subject = subject || `${biz.name} — ${rank?.position ? `#${rank.position}` : "not in the top 20"} for "${rank?.label || plan.category.search}"`;
+    subject = (links.demo ? `i set up a phone line for ${biz.name}` : "") || subject || `${biz.name} — ${rank?.position ? `#${rank.position}` : "not in the top 20"} for "${rank?.label || plan.category.search}"`;
     const mk = MARKETS[biz.market] || plan.city;
     const who = mk.local ? `I run Mesa Intelligence ${mk.local}` : "I run Mesa Intelligence out of Las Cruces, NM";
     const trial = env.PLAN_TRIAL_DAYS ?? 14;
-    body = `Hi,\n\nI ran a quick audit on ${biz.name}'s Google listing this morning: ${r}${audit.competitors.medianReviews ? `, with ${audit.place.reviewCount} reviews against a local median of ${audit.competitors.medianReviews}` : ""}. The free summary is here: {REPORT_LINK}\n\nFor ${plan.category.plural} the bigger leak is usually ${plan.category.angle.split(" — ")[0]}.\n\nI built an AI phone line for that: it answers when you can't, books the job into your calendar, texts the customer a confirmation and emails you a summary of every call. It's free for ${trial} days on a number you can call right now, and if it hasn't caught a job you'd have missed, you owe nothing. Fifteen minutes and I'll have it live for you: {BOOK_LINK}\n\n${who}. I ran a landscaping company before this, so I know what the phone does when you're on a job.\n\nBobby`;
+    body = links.demo
+      ? `Hi,\n\nI set up a demo phone line that answers as ${biz.name} — one click and you can hear it take a call the way your customers would after hours: {DEMO_LINK}\n\nI built it after auditing your Google listing: ${r}. The free summary is here: {REPORT_LINK}\n\nFor ${plan.category.plural} the bigger leak is usually ${plan.category.angle.split(" — ")[0]}. The real version answers when you can't, books the job into your calendar, texts the customer and emails you a summary. It's free for ${trial} days on your own number, and if it hasn't caught a job you'd have missed, you owe nothing. Fifteen minutes and it's live: {BOOK_LINK}\n\n${who}. I ran a landscaping company before this, so I know what the phone does when you're on a job.\n\nBobby`
+      : `Hi,\n\nI ran a quick audit on ${biz.name}'s Google listing this morning: ${r}${audit.competitors.medianReviews ? `, with ${audit.place.reviewCount} reviews against a local median of ${audit.competitors.medianReviews}` : ""}. The free summary is here: {REPORT_LINK}\n\nFor ${plan.category.plural} the bigger leak is usually ${plan.category.angle.split(" — ")[0]}.\n\nI built an AI phone line for that: it answers when you can't, books the job into your calendar, texts the customer a confirmation and emails you a summary of every call. It's free for ${trial} days on a number you can call right now, and if it hasn't caught a job you'd have missed, you owe nothing. Fifteen minutes and I'll have it live for you: {BOOK_LINK}\n\n${who}. I ran a landscaping company before this, so I know what the phone does when you're on a job.\n\nBobby`;
   }
-  body = body.replace(/\{REPORT_LINK\}/g, links.report).replace(/\{BOOK_LINK\}/g, links.book);
+  body = body.replace(/\{REPORT_LINK\}/g, links.report).replace(/\{BOOK_LINK\}/g, links.book).replace(/\{DEMO_LINK\}/g, links.demo || links.report);
   const footer = `\n\n—\nBobby Lloyd · Mesa Intelligence LLC · ${env.OUTBOUND_POSTAL_ADDRESS || "Las Cruces, NM"} · (575) 254-1185\nNot interested? ${links.unsub} and you won't hear from me again.`;
   return { subject, body: body.trim() + footer };
 }
@@ -420,7 +425,7 @@ async function runDailyInner(env, { date, limit, dryRun, deadline, subLimit, fc 
       const rec = await saveAudit(env, { place_id: biz.id, query: biz.name, source: "outbound", score: audit.score, grade: audit.grade, data, full: cacheable(audit) });
       actionPlan(env, data.facts).then((p) => savePlan(env, rec.id, p)).catch(() => {});
       const unsub_token = id("u").slice(2, 26);
-      const links = { report: reportLink(env, rec.id, rec.share_key), book: bookLink(env, rec.id, rec.share_key, base.id), unsub: unsubLink(env, unsub_token) };
+      const links = { report: reportLink(env, rec.id, rec.share_key), book: bookLink(env, rec.id, rec.share_key, base.id), unsub: unsubLink(env, unsub_token), demo: demoLinesEnabled(env) ? demoLink(env, rec.id, rec.share_key, base.id) : null };
       const mail = await composeEmail(env, { plan, biz, audit, links });
       const rank = audit.visibility?.queries?.[0] || null;
       const row = { ...base, audit_id: rec.id, email, score: audit.score, grade: audit.grade, rank_label: rank?.label || null, rank_position: rank?.position ?? null, subject: mail.subject, body_text: mail.body, unsub_token };
@@ -459,7 +464,10 @@ export async function runFollowups(env, { dryRun, timeBudgetMs } = {}) {
     if (await suppressed(env, o.email)) { await setStatus(env, o.id, "unsubscribed"); continue; }
     const links = { report: reportLink(env, o.audit_id, o.share_key), book: bookLink(env, o.audit_id, o.share_key, o.id), unsub: unsubLink(env, o.unsub_token) };
     const first = (o.subject || "").replace(/^re:\s*/i, "");
-    const text = `Hi,\n\nFollowing up on the audit I sent for ${o.business} — ${o.rank_position ? `#${o.rank_position}` : "not in the top 20"} for "${o.rank_label}". The 15-minute call is still open, and the full report (normally $99) is free when you book: ${links.book}\n\nIf the timing's wrong, no problem — just reply and tell me when's better.\n\nBobby\n\n—\nBobby Lloyd · Mesa Intelligence LLC · ${env.OUTBOUND_POSTAL_ADDRESS || "Las Cruces, NM"} · (575) 254-1185\nNot interested? ${links.unsub}`;
+    const demo = demoLinesEnabled(env) && o.share_key ? demoLink(env, o.audit_id, o.share_key, o.id) : null;
+    const text = demo
+      ? `Hi,\n\nQuick follow-up — the demo phone line I set up for ${o.business} is still live. One click and you can hear it answer a call as your business: ${demo}\n\nIf you like how it sounds, 15 minutes with me and it's answering your real number, free for ${env.PLAN_TRIAL_DAYS ?? 14} days: ${links.book}\n\nIf the timing's wrong, no problem — just reply and tell me when's better.\n\nBobby\n\n—\nBobby Lloyd · Mesa Intelligence LLC · ${env.OUTBOUND_POSTAL_ADDRESS || "Las Cruces, NM"} · (575) 254-1185\nNot interested? ${links.unsub}`
+      : `Hi,\n\nFollowing up on the audit I sent for ${o.business} — ${o.rank_position ? `#${o.rank_position}` : "not in the top 20"} for "${o.rank_label}". The 15-minute call is still open, and the full report (normally $99) is free when you book: ${links.book}\n\nIf the timing's wrong, no problem — just reply and tell me when's better.\n\nBobby\n\n—\nBobby Lloyd · Mesa Intelligence LLC · ${env.OUTBOUND_POSTAL_ADDRESS || "Las Cruces, NM"} · (575) 254-1185\nNot interested? ${links.unsub}`;
     try {
       if (live) await sendEmail(env, { to: o.email, subject: `Re: ${first}`, text, unsub: links.unsub });
       await setStatus(env, o.id, live ? "followup_sent" : "sent", { followup_at: live ? now() : null });
@@ -566,7 +574,9 @@ export async function summary(env, days = 1) {
     env.DB.prepare("SELECT status, COUNT(*) AS n FROM outreach GROUP BY status").all(),
     env.DB.prepare("SELECT b.*, o.business AS ob_business FROM sales_bookings b LEFT JOIN outreach o ON o.id = b.outreach_id WHERE b.created_at >= ?1 ORDER BY b.start_at ASC").bind(since).all(),
   ]);
-  return { runs: runs.results || [], recent: recent.results || [], totals: Object.fromEntries((totals.results || []).map((r) => [r.status, r.n])), bookings: booked.results || [] };
+  // Prospects who called their demo line (columns self-apply on the first demo call; absent before that).
+  const demos = await env.DB.prepare("SELECT business, email, phone, city, demo_calls, demo_at FROM outreach WHERE demo_at >= ?1 ORDER BY demo_at DESC LIMIT 50").bind(since).all().then((r) => r.results || []).catch(() => []);
+  return { runs: runs.results || [], recent: recent.results || [], totals: Object.fromEntries((totals.results || []).map((r) => [r.status, r.n])), bookings: booked.results || [], demos };
 }
 
 export async function emailDigest(env, s, plan) {
@@ -579,6 +589,7 @@ export async function emailDigest(env, s, plan) {
     <h2 style="margin:0 0 4px">Outbound — ${esc(plan.day)} · ${esc(plan.category?.label || plan.mode)} · ${esc(plan.city.label)}${plan.overflow?.length ? ` (+ ${esc(plan.overflow.map((m) => m.label).join(", "))} if needed)` : ""}</h2>
     <p style="color:#555;margin:0 0 14px">${s.runs.map((r) => `${r.mode}: found ${r.found}, emailed ${r.emailed}, skipped ${r.skipped}, follow-ups ${r.followups}${JSON.parse(r.errors_json || "[]").length ? `, errors ${JSON.parse(r.errors_json).length}` : ""}`).join(" · ") || "no runs"}</p>
     ${s.bookings.length ? `<h3>📅 Booked calls</h3><ul>${s.bookings.map((b) => `<li><b>${esc(b.business || b.ob_business)}</b> — ${esc(b.name)} (${esc(b.email)}${b.phone ? `, ${esc(b.phone)}` : ""}) · ${new Date(b.start_at * 1000).toLocaleString("en-US", { timeZone: TZ, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</li>`).join("")}</ul>` : ""}
+    ${s.demos?.length ? `<h3>🔥 Tried their demo line — call these first</h3><ul>${s.demos.map((d) => `<li><b>${esc(d.business)}</b>${d.phone ? ` · ${esc(d.phone)}` : ""} · ${esc(d.email || "")} · ${d.demo_calls} call${d.demo_calls === 1 ? "" : "s"}, last ${new Date(d.demo_at * 1000).toLocaleString("en-US", { timeZone: TZ, weekday: "short", hour: "numeric", minute: "2-digit" })}</li>`).join("")}</ul>` : ""}
     <h3>Emails (${sent.length})</h3>
     ${rows ? `<table style="border-collapse:collapse;font-size:13px"><tr style="color:#777;text-align:left"><th>Business</th><th>Email</th><th>Score</th><th>Rank</th><th>Status</th></tr>${rows}</table>` : "<p>None.</p>"}
     ${skipped.length ? `<h3 style="margin-top:18px">Skipped (${skipped.length})</h3><p style="font-size:13px;color:#555">${skipped.map((r) => `${esc(r.business)} — ${esc(r.skip_reason)}`).join("<br>")}</p>` : ""}
@@ -588,6 +599,6 @@ export async function emailDigest(env, s, plan) {
     <p style="color:#777;font-size:12px;margin-top:16px">Totals to date: ${Object.entries(s.totals).map(([k, v]) => `${k} ${v}`).join(" · ")}. Replies land in hello@ — anyone who writes back, mark them in /admin → Outbound.</p>
   </div>`;
   const res = await fetch("https://api.resend.com/emails", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${env.RESEND_API_KEY}` },
-    body: JSON.stringify({ from: env.LEAD_FROM || "Mesa Intelligence <hello@mesaintelligence.ai>", to: [env.LEAD_TO], subject: `Outbound ${plan.day}: ${sent.length} emailed${s.calls?.length ? `, ${s.calls.length} to call` : ""}${s.bookings.length ? `, ${s.bookings.length} booked` : ""} — ${plan.category?.label || plan.mode} · ${plan.city.label}`, html }) });
+    body: JSON.stringify({ from: env.LEAD_FROM || "Mesa Intelligence <hello@mesaintelligence.ai>", to: [env.LEAD_TO], subject: `Outbound ${plan.day}: ${sent.length} emailed${s.calls?.length ? `, ${s.calls.length} to call` : ""}${s.bookings.length ? `, ${s.bookings.length} booked` : ""}${s.demos?.length ? `, ${s.demos.length} tried the demo` : ""} — ${plan.category?.label || plan.mode} · ${plan.city.label}`, html }) });
   return res.ok;
 }

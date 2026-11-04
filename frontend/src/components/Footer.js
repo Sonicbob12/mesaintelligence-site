@@ -31,9 +31,9 @@ export default function Footer() {
               <li><a href="/ai-consulting-las-cruces/" className="hover:text-[#E5A93C] transition-colors">AI Consulting · Las Cruces</a></li>
               <li><a href="/ai-consulting-el-paso/" className="hover:text-[#E5A93C] transition-colors">AI Consulting · El Paso</a></li>
               <li><a href="/ai-for-hvac-companies/" className="hover:text-[#E5A93C] transition-colors">HVAC</a></li>
-              <li><a href="/ai-for-dental-offices/" className="hover:text-[#E5A93C] transition-colors">Dental</a></li>
-              <li><a href="/ai-for-law-firms/" className="hover:text-[#E5A93C] transition-colors">Law Firms</a></li>
-              <li><a href="/ai-for-restaurants/" className="hover:text-[#E5A93C] transition-colors">Restaurants</a></li>
+              <li><a href="/ai-for-plumbers/" className="hover:text-[#E5A93C] transition-colors">Plumbers</a></li>
+              <li><a href="/ai-for-electricians/" className="hover:text-[#E5A93C] transition-colors">Electricians</a></li>
+              <li><a href="/ai-for-roofers/" className="hover:text-[#E5A93C] transition-colors">Roofers</a></li>
               <li><a href="/free-google-business-profile-audit/" className="hover:text-[#E5A93C] transition-colors">Free Listing Audit</a></li>
               <li><a href="/plan" className="hover:text-[#E5A93C] transition-colors">Pricing</a></li>
             </ul>

@@ -3,6 +3,8 @@
 // which writes public/<slug>/index.html, public/sitemap.xml and public/robots.txt.
 // Rules: no invented statistics, testimonials or client names. Everything stated here must be true of the product.
 
+import { tradePages } from "./trades.mjs";
+
 export const SITE = {
   url: "https://mesaintelligence.ai",
   name: "Mesa Intelligence",
@@ -139,36 +141,6 @@ export const PAGES = [
 
   // ---------------------------------------------------------------- industries
   {
-    slug: "ai-for-hvac-companies",
-    title: "AI Receptionist & Dispatch Help for HVAC Companies | Las Cruces & El Paso",
-    description: "AI call answering for HVAC contractors in Las Cruces and El Paso: books service calls 24/7, flags no-heat/no-AC emergencies, emails every call summary and requests reviews after each job.",
-    h1: "AI call answering for HVAC companies in Las Cruces and El Paso",
-    kicker: "HVAC · refrigerated air · heating",
-    lede: "When the AC quits in a Mesilla Valley July or the furnace goes out on a January night, the homeowner calls until someone answers. An AI receptionist makes sure that someone is you — booking the visit and flagging the emergency to your phone.",
-    area: "Las Cruces, NM and El Paso, TX",
-    sections: [
-      { h: "Built around how HVAC calls actually go", list: [
-        "Asks the questions your dispatcher would: system type, symptoms, address, best callback number",
-        "Separates no-cool / no-heat emergencies from tune-ups and quotes, using your rules",
-        "Books maintenance and estimates into the windows you open",
-        "Alerts you or your on-call tech right away when it's urgent",
-        "Requests a Google review after the job, which is what moves you up the map listings",
-      ]},
-      { h: "Hear the HVAC demo", p: [
-        "Our demo line, (575) 741-4070, is set up as a sample HVAC company. Call it and book a tune-up, or tell it your AC is blowing warm air and listen to how it handles the urgency.",
-      ]},
-      { h: "Where you rank matters as much as who answers", p: [
-        "Run the free audit for your shop: it shows where you land for “HVAC contractor in Las Cruces” (or El Paso), how your reviews compare with the shops around you, and the specific fixes that move you up.",
-      ]},
-    ],
-    faq: [
-      ["Can it dispatch a tech?", "It collects everything a tech needs and alerts you or your on-call tech right away. Assigning the truck stays with you."],
-      ["Does it work with my scheduling software?", "It books into a Google Calendar out of the box. If you run ServiceTitan, Housecall Pro or Jobber, we'll talk through the best handoff on a call."],
-      ["What about price questions?", "It answers with the prices you approve — diagnostic fees, tune-up specials — and never makes up a number."],
-      ["What does it cost?", "$249 a month on the Local Growth Plan, which also includes website chat, review requests and a monthly listing audit."],
-    ],
-  },
-  {
     slug: "ai-for-dental-offices",
     title: "AI Front Desk & New-Patient Intake for Dental Offices | Las Cruces & El Paso",
     description: "AI phone and website intake for dental practices in Las Cruces and El Paso: answers new-patient calls after hours, books consults, emails every inquiry and requests reviews.",
@@ -291,4 +263,6 @@ export const PAGES = [
     ],
     cta: { label: "Run my free audit", href: "/#audit" },
   },
+  // ---------------------------------------------------------------- trades (hubs + trade × city), see trades.mjs
+  ...tradePages(PLAN_BULLETS),
 ];

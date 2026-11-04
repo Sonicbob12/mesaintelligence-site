@@ -4,10 +4,12 @@
 //   POST /api/admin/voice { tenant, phone_number: "+15755550123" }
 //                                              → same, then point that number at the agent and set the inbound webhook
 //   POST /api/admin/voice { tenant, test_call: true, to: "+1..." }  → place an outbound test call from the tenant's number
+//   POST /api/admin/voice { tenant: "prospect-demo" }  → re-sync the shared prospect demo agent (/hear pages)
 
 import { loadTenant, listTenants } from "../../_lib/tenants.js";
 import { provisionVoiceAgent, assignNumber, listNumbers, retell, nowFor } from "../../_lib/retell.js";
 import { json, readJSON, requireAdmin } from "../../_lib/http.js";
+import { PROSPECT_TENANT, resyncAgent } from "../../_lib/prospect_demo.js";
 
 export async function onRequest({ request, env }) {
   const denied = requireAdmin(request, env);
@@ -27,6 +29,11 @@ export async function onRequest({ request, env }) {
 
   if (request.method !== "POST") return json({ detail: "Method not allowed" }, 405);
   const b = await readJSON(request);
+  // POST { tenant: "prospect-demo" } → re-sync the shared prospect demo agent (prompt/voice) now.
+  if (b?.tenant === PROSPECT_TENANT) {
+    try { return json({ ok: true, ...(await resyncAgent(env)) }); }
+    catch (e) { return json({ detail: String(e?.message || e).slice(0, 500) }, 500); }
+  }
   const tenant = await loadTenant(env, b?.tenant);
   if (!tenant) return json({ detail: "Unknown tenant" }, 400);
 

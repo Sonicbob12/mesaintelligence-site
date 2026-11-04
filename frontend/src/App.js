@@ -10,6 +10,7 @@ import AuditReportPage from "@/pages/AuditReportPage";
 import BookPage from "@/pages/BookPage";
 import PortalPage from "@/pages/PortalPage";
 import PlanPage from "@/pages/PlanPage";
+import HearPage from "@/pages/HearPage";
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
           <Route path="/book" element={<BookPage />} />
           <Route path="/portal" element={<PortalPage />} />
           <Route path="/plan" element={<PlanPage />} />
+          <Route path="/hear" element={<HearPage />} />
         </Routes>
       </BrowserRouter>
       <Toaster theme="dark" position="bottom-right" toastOptions={{

@@ -60,6 +60,10 @@ export default function AuditReportPage() {
           <>
             {data.contact_name && <p className="text-sm text-[#9E9AA3] mb-6">Prepared for {data.contact_name}{data.business ? ` · ${data.business}` : ""}</p>}
             <AuditReport full={data.full} plan={data.plan} pro={data.pro} history={data.history} link={link} showPrint />
+            <Link to={`/hear?a=${encodeURIComponent(id)}&k=${encodeURIComponent(k)}`} className="mt-8 flex items-center justify-between gap-4 border border-[#D96B43]/50 bg-[#D96B43]/[0.05] p-6 hover:border-[#E5A93C] transition-colors print:hidden" data-testid="audit-hear-link">
+              <span><span className="block font-display text-xl font-light">Hear how {data.business || "your business"} would answer after hours</span><span className="block text-sm text-[#9E9AA3] font-light mt-1">A demo AI phone line built from this listing. One click, uses your microphone.</span></span>
+              <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-[#E5A93C] whitespace-nowrap">Call it →</span>
+            </Link>
             <PlanOffer auditId={id} shareKey={k} pro={data.pro} business={data.business} email="" />
             {data.pro_mode === "paid" && !data.pro && (
               <div className="mt-8 border border-[#E5A93C]/50 bg-[#E5A93C]/[0.04] p-6 text-sm print:hidden">
