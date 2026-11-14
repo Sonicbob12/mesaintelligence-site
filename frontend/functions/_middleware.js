@@ -5,7 +5,6 @@
 // started later can be credited to the video or post that sent the visitor.
 
 import { attributionFromUrl, attributionCookie } from "./_lib/attribution.js";
-import { siteForHost } from "./_lib/sites.js";
 
 const META = {
   "/plan": {
@@ -20,12 +19,10 @@ const META = {
   "/terms": { title: "Terms & Conditions | Mesa Intelligence", description: "Terms and conditions for Mesa Intelligence LLC services and SMS program." },
   "/sms": { title: "SMS Program | Mesa Intelligence", description: "How Mesa Intelligence uses text messages: appointment confirmations and reminders. Reply STOP to opt out." },
 };
-const PRIVATE = [/^\/admin/, /^\/portal/, /^\/audit\//, /^\/embed/, /^\/hear/, /^\/manage/, /^\/sites\//];
+const PRIVATE = [/^\/admin/, /^\/portal/, /^\/audit\//, /^\/embed/, /^\/hear/, /^\/manage/];
 
-export async function onRequest({ request, next, env }) {
+export async function onRequest({ request, next }) {
   const url = new URL(request.url);
-  const client = siteForHost(url.hostname);
-  if (client) return serveClientSite(request, url, client, next, env);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   if (path.startsWith("/api/") || request.method !== "GET") return next();
 
@@ -65,18 +62,4 @@ function withAttribution(res, attr) {
   const h = new Headers(res.headers);
   h.append("Set-Cookie", attributionCookie(attr));
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
-}
-
-// A client's own domain: /api/* runs as usual; everything else comes from public/sites/<slug>/,
-// with any page path falling back to that site's index (never the Mesa app).
-async function serveClientSite(request, url, { site, redirect }, next, env) {
-  if (redirect) return Response.redirect(`https://${site.primary}${url.pathname}${url.search}`, 301);
-  if (url.pathname.startsWith("/api/")) return next();
-  const base = `/sites/${site.slug}`;
-  const isFile = /\.[a-z0-9]{2,5}$/i.test(url.pathname) && !url.pathname.endsWith(".html");
-  if (!isFile) return env.ASSETS.fetch(new Request(new URL(`${base}/`, url.origin), request));
-  const res = await env.ASSETS.fetch(new Request(new URL(`${base}${url.pathname}`, url.origin), request));
-  // _redirects' SPA fallback would hand back the Mesa app for a missing file — answer 404 instead.
-  if (res.status === 404 || (res.headers.get("content-type") || "").includes("text/html")) return new Response("Not found", { status: 404 });
-  return res;
 }
