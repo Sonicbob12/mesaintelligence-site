@@ -4,10 +4,13 @@
 //   POST /api/admin/voice { tenant, phone_number: "+15755550123" }
 //                                              → same, then point that number at the agent and set the inbound webhook
 //   POST /api/admin/voice { tenant, test_call: true, to: "+1..." }  → place an outbound test call from the tenant's number
+//   POST /api/admin/voice { tenant, buy_number: true, area_codes: [440, 216, 330] }
+//                                              → same, then buy a local number in the first area code that has one
+//                                                (only the codes given — no 575/915 fallback) and point it at the agent
 //   POST /api/admin/voice { tenant: "prospect-demo" }  → re-sync the shared prospect demo agent (/hear pages)
 
 import { loadTenant, listTenants } from "../../_lib/tenants.js";
-import { provisionVoiceAgent, assignNumber, listNumbers, retell, nowFor } from "../../_lib/retell.js";
+import { provisionVoiceAgent, assignNumber, listNumbers, retell, nowFor, buyNumber } from "../../_lib/retell.js";
 import { json, readJSON, requireAdmin } from "../../_lib/http.js";
 import { PROSPECT_TENANT, resyncAgent } from "../../_lib/prospect_demo.js";
 
@@ -54,6 +57,10 @@ export async function onRequest({ request, env }) {
       if (!/^\+1\d{10}$/.test(number)) return json({ detail: "phone_number must be E.164, e.g. +15755550123" }, 400);
       await assignNumber(env, tenant, number, ids.agent_id);
       await retell(env, "PATCH", `/update-phone-number/${encodeURIComponent(number)}`, { inbound_webhook_url: `${origin}/api/voice/inbound` });
+    } else if (b.buy_number && !tenant.voice_number) {
+      const codes = (Array.isArray(b.area_codes) ? b.area_codes : [b.area_codes]).map((a) => String(a || "").replace(/\D/g, "")).filter((a) => a.length === 3);
+      if (!codes.length) return json({ detail: "area_codes required, e.g. [440]" }, 400);
+      number = await buyNumber({ ...env, VOICE_FALLBACK_AREA_CODES: codes.join(",") }, { ...tenant, retell_agent_id: ids.agent_id }, ids.agent_id, origin, { areaCode: codes[0] });
     }
     return json({ ok: true, tenant: tenant.id, ...ids, phone_number: number || tenant.voice_number || null, tool_url: `${origin}/api/voice/tool` });
   } catch (e) {

@@ -169,6 +169,7 @@ function ownerMessage(tenant, p) {
     return { subject: `New booking: ${r.customer_name} — ${when}`, rows: [["Customer", r.customer_name], ["Phone", r.phone || "-"], ["Service", r.service || "-"], ["When", when], ["Notes", r.notes || "-"], ["Confirmation", r.id.slice(-6).toUpperCase()]] };
   }
   if (p.kind === "handoff") return { subject: `${r.urgency === "urgent" ? "URGENT " : ""}Handoff requested`, rows: [["Reason", r.reason], ["Urgency", r.urgency], ["Callback", r.callback_phone || "-"]] };
+  if (p.kind === "lead" && r.source === "application") return { subject: `New application: ${r.name || "unknown"}`, rows: [["Name", r.name || "-"], ["Phone", r.phone || "-"], ["Email", r.email || "-"]], extra: r.summary || "" };
   if (p.kind === "lead") return { subject: `New lead: ${r.name || "unknown"}`, rows: [["Name", r.name || "-"], ["Phone", r.phone || "-"], ["Email", r.email || "-"], ["Summary", r.summary]] };
   return { subject: `${p.needsFollowup ? "Follow-up needed: " : ""}Call from ${p.from || "web"}`, rows: [["Caller", p.callerName || "-"], ["Number", p.callbackPhone || p.from || "-"], ["Length", p.mins != null ? `${p.mins} min` : "-"], ["Outcome", p.needsFollowup ? "needs follow-up" : "handled"], ["Sentiment", p.sentiment || "-"]], extra: p.summary || "" };
 }

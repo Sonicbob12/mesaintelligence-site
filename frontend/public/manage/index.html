@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Tracker</title>
+<style>
+:root{--bg:#0f0f10;--panel:#18181b;--line:#2a2a2e;--text:#ececec;--muted:#9a9aa0;--acc:#d4af5f;--ok:#7fbf7a;--warn:#e2a64b;--bad:#e2644b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:0;background:rgba(15,15,16,.95);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:5}
+.wrap{max-width:860px;margin:0 auto;padding:0 14px}
+.top{display:flex;justify-content:space-between;align-items:center;padding:14px 0 8px}
+.top h1{font-size:19px;margin:0}
+.top small{color:var(--muted)}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:10px}
+.tabs button{flex:none;background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:8px 14px;font:inherit;cursor:pointer}
+.tabs button.on{background:var(--acc);border-color:var(--acc);color:#1a1408;font-weight:600}
+.tabs .n{opacity:.75;margin-left:4px}
+main{padding:16px 0 80px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.title{font-weight:600;font-size:16px}
+.muted{color:var(--muted);font-size:13px}
+.pre{white-space:pre-wrap;margin-top:8px;font-size:14px}
+.pill{font-size:11px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:3px 8px;white-space:nowrap}
+.pill.available,.pill.approved,.pill.picked_up{color:var(--ok);border-color:rgba(127,191,122,.5)}
+.pill.reserved,.pill.deposit,.pill.waitlist,.pill.contacted{color:var(--warn);border-color:rgba(226,166,75,.5)}
+.pill.new{color:#1a1408;background:var(--acc);border-color:var(--acc)}
+.pill.sold,.pill.not_a_fit,.pill.hidden{color:var(--muted)}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+input,select,textarea{width:100%;background:#111113;border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px;font:inherit}
+textarea{min-height:70px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.btn{background:var(--acc);color:#1a1408;border:0;border-radius:10px;padding:10px 16px;font:600 14px/1 inherit;cursor:pointer}
+.btn.sec{background:transparent;border:1px solid var(--line);color:var(--text)}
+.btn.del{background:transparent;border:1px solid rgba(226,100,75,.5);color:var(--bad)}
+a{color:var(--acc)}
+.sect{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:16px 0 4px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#222;border:1px solid var(--line);padding:10px 16px;border-radius:10px;display:none}
+.empty{color:var(--muted);text-align:center;padding:30px 10px}
+details summary{cursor:pointer;color:var(--acc);font-size:14px;margin-top:8px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="top"><div><h1 id="biz">Loading…</h1><small id="sub"></small></div><button class="btn sec" id="refresh">Refresh</button></div>
+  <div class="tabs" id="tabs"></div>
+</div></header>
+<main class="wrap" id="main"></main>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+  var T = new URLSearchParams(location.search).get("t") || "";
+  var API = "/api/manage?t=" + encodeURIComponent(T);
+  var data = null, tab = "leads";
+  var LABEL = { available:"Available", reserved:"Reserved", sold:"Sold", hidden:"Hidden", new:"New", contacted:"Contacted", approved:"Approved", waitlist:"Waitlist", deposit:"Deposit paid", picked_up:"Picked up", not_a_fit:"Not a fit" };
+  var esc = function(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); };
+  var when = function(sec){ return sec ? new Date(sec*1000).toLocaleString("en-US", { timeZone: data.business.timezone, month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }) : ""; };
+  var toast = function(m){ var t = document.getElementById("toast"); t.textContent = m; t.style.display = "block"; setTimeout(function(){ t.style.display = "none"; }, 1800); };
+  var opts = function(list, cur){ return list.map(function(s){ return '<option value="' + s + '"' + (s === cur ? " selected" : "") + ">" + (LABEL[s] || s) + "</option>"; }).join(""); };
+  var tel = function(p){ return p ? '<a href="tel:' + esc(p.replace(/[^\d+]/g,"")) + '">' + esc(p) + "</a>" : ""; };
+
+  function load(){
+    fetch(API).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); }).then(function(res){
+      if (!res.ok) { document.getElementById("biz").textContent = "Link not valid"; document.getElementById("main").innerHTML = '<p class="empty">' + esc(res.j.detail) + "</p>"; return; }
+      data = res.j; document.title = data.business.name + " — Tracker";
+      document.getElementById("biz").textContent = data.business.name;
+      document.getElementById("sub").innerHTML = data.business.phone ? "AI line: " + tel(data.business.phone) : "";
+      render();
+    });
+  }
+  function post(body){ return fetch(API, { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(body) }).then(function(r){ return r.json().then(function(j){ if (!r.ok) throw new Error(j.detail || "Error"); return j; }); }); }
+
+  function render(){
+    var newLeads = data.leads.filter(function(l){ return l.status === "new"; }).length;
+    var tabs = [["leads","Applications & leads", newLeads ? newLeads + " new" : data.leads.length],["items","Puppies", data.items.length],["calls","Calls & chats", data.calls.length],["visits","Visits", data.visits.length]];
+    document.getElementById("tabs").innerHTML = tabs.map(function(t){ return '<button data-tab="' + t[0] + '" class="' + (t[0] === tab ? "on" : "") + '">' + t[1] + '<span class="n">' + t[2] + "</span></button>"; }).join("");
+    var m = document.getElementById("main");
+    if (tab === "items") m.innerHTML = '<div class="btns" style="margin:0 0 12px"><button class="btn" data-add>+ Add a puppy</button></div>' + (data.items.length ? data.items.map(itemCard).join("") : '<p class="empty">No puppies listed yet. Add them here and they show on the website.</p>');
+    if (tab === "leads") m.innerHTML = data.leads.length ? data.leads.map(leadCard).join("") : '<p class="empty">No applications yet. Website applications, chats and calls that leave details all land here.</p>';
+    if (tab === "calls") m.innerHTML = data.calls.length ? data.calls.map(function(c){ return '<div class="card"><div class="row"><div class="title">' + (c.channel === "voice" ? "📞 Phone call" : c.channel === "sms" ? "💬 Text" : "💬 Website chat") + '</div><span class="muted">' + when(c.updated_at) + "</span></div>" + (c.external_id && c.channel !== "web" ? '<div class="muted">' + esc(c.external_id) + "</div>" : "") + '<div class="pre">' + esc(c.summary || "(no summary yet)") + "</div></div>"; }).join("") : '<p class="empty">No calls or chats yet.</p>';
+    if (tab === "visits") m.innerHTML = data.visits.length ? data.visits.map(function(v){ return '<div class="card"><div class="row"><div class="title">' + esc(v.customer_name) + '</div><span class="muted">' + when(v.start_at) + '</span></div><div class="muted">' + esc(v.service || "") + " · " + tel(v.phone) + (v.email ? " · " + esc(v.email) : "") + "</div>" + (v.notes ? '<div class="pre">' + esc(v.notes) + "</div>" : "") + "</div>"; }).join("") : '<p class="empty">No upcoming visits booked.</p>';
+  }
+
+  function itemCard(it){
+    return '<form class="card" data-item="' + esc(it.id || "") + '">' +
+      '<div class="row"><div class="title">' + esc(it.title || "New puppy") + (it.subtitle ? ' <span class="muted">· ' + esc(it.subtitle) + "</span>" : "") + '</div><span class="pill ' + esc(it.status) + '">' + (LABEL[it.status] || it.status) + "</span></div>" +
+      '<div class="g2"><div><label>Name / collar</label><input name="title" value="' + esc(it.title) + '" placeholder="Green collar" required></div>' +
+      '<div><label>Sex · color</label><input name="subtitle" value="' + esc(it.subtitle) + '" placeholder="Male · Blue &amp; rust"></div>' +
+      '<div><label>Status</label><select name="status">' + opts(data.item_statuses, it.status) + "</select></div>" +
+      '<div><label>Price (shown on site)</label><input name="price" value="' + esc(it.price) + '" placeholder="$2,000"></div></div>' +
+      '<label>Note on the website (optional)</label><input name="notes" value="' + esc(it.notes) + '" placeholder="Laid-back, loves to cuddle">' +
+      '<label>Photo link</label><input name="photo" value="' + esc(it.photo) + '" placeholder="Mesa adds this for you">' +
+      '<div class="sect">Private — buyer</div>' +
+      '<div class="g2"><div><label>Buyer name</label><input name="buyer_name" value="' + esc(it.buyer_name) + '"></div>' +
+      '<div><label>Buyer phone</label><input name="buyer_phone" value="' + esc(it.buyer_phone) + '"></div>' +
+      '<div><label>Deposit</label><input name="deposit" value="' + esc(it.deposit) + '" placeholder="$300 paid 11/16"></div>' +
+      '<div><label>Go-home date</label><input name="go_home" value="' + esc(it.go_home) + '" placeholder="Nov 21"></div></div>' +
+      '<label>Private notes</label><textarea name="private_notes">' + esc(it.private_notes) + "</textarea>" +
+      '<input type="hidden" name="sort" value="' + esc(it.sort || 0) + '">' +
+      '<div class="btns"><button class="btn" type="submit">Save</button>' + (it.id ? '<button class="btn del" type="button" data-del="' + esc(it.id) + '">Delete</button>' : "") + "</div></form>";
+  }
+
+  function leadCard(l){
+    var src = l.source === "application" ? "Website application" : l.source === "voice" ? "Phone call" : l.source === "web" || l.source === "chat" ? "Website chat" : l.source;
+    return '<form class="card" data-lead="' + esc(l.id) + '">' +
+      '<div class="row"><div><div class="title">' + esc(l.name || "Unknown caller") + '</div><div class="muted">' + esc(src) + " · " + when(l.created_at) + '</div></div><span class="pill ' + esc(l.status) + '">' + (LABEL[l.status] || l.status) + "</span></div>" +
+      '<div style="margin-top:6px">' + tel(l.phone) + (l.email ? ' · <a href="mailto:' + esc(l.email) + '">' + esc(l.email) + "</a>" : "") + "</div>" +
+      '<div class="pre">' + esc(l.summary || "") + "</div>" +
+      '<div class="g2"><div><label>Status</label><select name="status">' + opts(data.lead_statuses, l.status) + "</select></div>" +
+      '<div><label>Puppy</label><select name="item_id"><option value="">—</option>' + data.items.map(function(i){ return '<option value="' + esc(i.id) + '"' + (i.id === l.item_id ? " selected" : "") + ">" + esc(i.title) + "</option>"; }).join("") + "</select></div></div>" +
+      '<label>Your notes</label><textarea name="notes" placeholder="Called Sat — coming to visit Sunday 2pm">' + esc(l.notes) + "</textarea>" +
+      '<div class="btns"><button class="btn" type="submit">Save</button></div></form>';
+  }
+
+  document.getElementById("tabs").addEventListener("click", function(e){ var b = e.target.closest("[data-tab]"); if (b) { tab = b.getAttribute("data-tab"); render(); window.scrollTo(0,0); } });
+  document.getElementById("refresh").addEventListener("click", load);
+  document.getElementById("main").addEventListener("click", function(e){
+    if (e.target.closest("[data-add]")) { data.items.unshift({ title:"", status:"available", sort: data.items.length }); render(); return; }
+    var d = e.target.closest("[data-del]");
+    if (d && confirm("Delete this puppy from the list?")) post({ op:"delete_item", id: d.getAttribute("data-del") }).then(function(){ toast("Deleted"); load(); }).catch(function(x){ toast(x.message); });
+  });
+  document.getElementById("main").addEventListener("submit", function(e){
+    e.preventDefault();
+    var f = e.target, o = {}; new FormData(f).forEach(function(v,k){ o[k] = v; });
+    if (f.hasAttribute("data-item")) { o.id = f.getAttribute("data-item") || undefined; post({ op:"item", item:o }).then(function(){ toast("Saved — the website updates within a minute"); load(); }).catch(function(x){ toast(x.message); }); }
+    if (f.hasAttribute("data-lead")) { post({ op:"lead", id: f.getAttribute("data-lead"), status:o.status, notes:o.notes, item_id:o.item_id }).then(function(){ toast("Saved"); load(); }).catch(function(x){ toast(x.message); }); }
+  });
+  load();
+})();
+</script>
+</body>
+</html>

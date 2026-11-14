@@ -13,7 +13,7 @@ export async function notify(env, tenant, subject, rows, extraText = "") {
       headers: { "content-type": "application/json", authorization: `Bearer ${env.RESEND_API_KEY}` },
       body: JSON.stringify({
         from: env.LEAD_FROM || "Mesa Intelligence <hello@mesaintelligence.ai>",
-        to: [tenant.notify_email],
+        to: String(tenant.notify_email).split(/[,;\s]+/).filter(Boolean).slice(0, 5),
         subject: `[${tenant.name}] ${subject}`,
         html: `<h3 style="font-family:sans-serif">${esc(subject)}</h3><table style="font-family:sans-serif;border-collapse:collapse">${table}</table>` +
               (extraText ? `<p style="font-family:sans-serif;white-space:pre-wrap">${esc(extraText)}</p>` : ""),

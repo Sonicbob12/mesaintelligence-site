@@ -12,3 +12,7 @@
 /admin
   X-Robots-Tag: noindex
   Cache-Control: no-store
+
+/manage/*
+  X-Robots-Tag: noindex
+  Cache-Control: no-store
