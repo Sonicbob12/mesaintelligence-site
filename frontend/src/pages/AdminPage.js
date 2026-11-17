@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw, LogOut } from "lucide-react";
 import AdminAudit from "@/components/AdminAudit";
 import AdminOutbound from "@/components/AdminOutbound";
+import AdminPreviews from "@/components/AdminPreviews";
 import AdminPlans from "@/components/AdminPlans";
 import AdminWorkflows from "@/components/AdminWorkflows";
 
@@ -161,6 +162,8 @@ export default function AdminPage() {
         </section>
 
         {health && tenantId && <AdminWorkflows call={call} tenantId={tenantId} />}
+
+        {health && <AdminPreviews call={call} />}
 
         {health && <AdminAudit call={call} enabled={health.places} />}
 

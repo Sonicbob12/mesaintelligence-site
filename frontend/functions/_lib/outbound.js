@@ -487,7 +487,7 @@ async function saveRun(env, run) {
 // ---------- call sheet (Bobby dials these himself — never an AI voice) ----------
 // Businesses today's run found but couldn't email: no website, or no email on the site. Weakest presence first.
 const LINE_LABEL = { mobile: "mobile", landline: "landline", fixedVoip: "VoIP", nonFixedVoip: "VoIP (app)", tollFree: "toll-free", voip: "VoIP" };
-async function lineType(env, phone) {
+export async function lineType(env, phone) {
   if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || env.CALLSHEET_LOOKUP === "0") return null;
   const d = String(phone || "").replace(/\D/g, ""); const e164 = d.length === 10 ? `+1${d}` : d.length === 11 ? `+${d}` : null;
   if (!e164) return null;
@@ -548,6 +548,19 @@ function callSheetHtml(calls, esc) {
     <table style="border-collapse:collapse;font-size:13px;width:100%">${calls.map(row).join("")}</table>`;
 }
 
+// Website previews ready to text (built by _lib/preview.js). Bobby texts these by hand from his own phone.
+function textListHtml(list, esc) {
+  if (!list?.length) return "";
+  const row = (r) => `<tr style="vertical-align:top;border-top:1px solid #eee">
+      <td style="padding:8px 10px 4px 0"><b>${esc(r.business)}</b><br><span style="color:#777">${esc(r.trade)} · ${esc(r.market)}</span></td>
+      <td style="padding:8px 10px 4px 0;white-space:nowrap">${esc(r.phone)}<br><span style="color:#777">${esc(LINE_LABEL[r.line_type] || "line type ?")}</span></td>
+      <td style="padding:8px 0 4px;white-space:nowrap">${r.texts.sms_first ? `<a href="${esc(r.texts.sms_first)}">Text 1 ›</a><br>` : ""}<a href="${esc(r.url)}?admin=1">See site ›</a></td></tr>
+    <tr><td colspan="3" style="padding:0 0 10px;color:#444;font-size:12px"><i>${esc(r.texts.first)}</i></td></tr>`;
+  return `<h3 style="margin-top:22px">💬 Text list (${list.length}): websites built for businesses with none</h3>
+    <p style="font-size:12px;color:#555;margin:0 0 8px">Text these yourself from your own phone (on your phone, "Text 1" opens Messages with the text filled in). Send the link only after they answer. The follow-up text with the link is in /admin → Website previews. Mark each one texted there. Anyone who says stop: mark them opted out and don't text again.</p>
+    <table style="border-collapse:collapse;font-size:13px;width:100%">${list.map(row).join("")}</table>`;
+}
+
 // ---------- reporting ----------
 // Sends the day's digest once (guarded in rate_limits), so the noon tick can't double-send.
 export async function sendDigestOnce(env, date = new Date()) {
@@ -560,6 +573,7 @@ export async function sendDigestOnce(env, date = new Date()) {
   } catch {}
   const s = await summary(env, 1);
   if (s) s.calls = await callSheet(env, plan.day).catch((e) => { console.error("callsheet", e?.message || e); return []; });
+  if (s) s.texts = await import("./preview.js").then((m) => m.listPreviews(env, { days: 3, status: "ready" })).catch((e) => { console.error("textlist", e?.message || e); return []; });
   const ok = await emailDigest(env, s, plan);
   if (ok) { try { await env.DB.prepare("INSERT INTO rate_limits (k, window_start, count) VALUES (?1, ?2, 1) ON CONFLICT(k) DO UPDATE SET count = 1").bind(key, now()).run(); } catch {} }
   return { sent: ok };
@@ -594,11 +608,12 @@ export async function emailDigest(env, s, plan) {
     ${rows ? `<table style="border-collapse:collapse;font-size:13px"><tr style="color:#777;text-align:left"><th>Business</th><th>Email</th><th>Score</th><th>Rank</th><th>Status</th></tr>${rows}</table>` : "<p>None.</p>"}
     ${skipped.length ? `<h3 style="margin-top:18px">Skipped (${skipped.length})</h3><p style="font-size:13px;color:#555">${skipped.map((r) => `${esc(r.business)} — ${esc(r.skip_reason)}`).join("<br>")}</p>` : ""}
     ${s.runs.some((r) => JSON.parse(r.errors_json || "[]").length) ? `<h3 style="color:#B23B1A">Errors</h3><pre style="font-size:12px;white-space:pre-wrap">${esc(s.runs.flatMap((r) => JSON.parse(r.errors_json || "[]")).join("\n"))}</pre>` : ""}
+    ${textListHtml(s.texts, esc)}
     ${callSheetHtml(s.calls, esc)}
     ${!env.OUTBOUND_POSTAL_ADDRESS ? `<p style="color:#B23B1A;font-size:12px;margin-top:16px">⚠️ OUTBOUND_POSTAL_ADDRESS isn't set — the footer says only "Las Cruces, NM". CAN-SPAM requires a valid postal address (a PO box or registered mailbox works). Add it in Cloudflare → Settings → Variables.</p>` : ""}
     <p style="color:#777;font-size:12px;margin-top:16px">Totals to date: ${Object.entries(s.totals).map(([k, v]) => `${k} ${v}`).join(" · ")}. Replies land in hello@ — anyone who writes back, mark them in /admin → Outbound.</p>
   </div>`;
   const res = await fetch("https://api.resend.com/emails", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${env.RESEND_API_KEY}` },
-    body: JSON.stringify({ from: env.LEAD_FROM || "Mesa Intelligence <hello@mesaintelligence.ai>", to: [env.LEAD_TO], subject: `Outbound ${plan.day}: ${sent.length} emailed${s.calls?.length ? `, ${s.calls.length} to call` : ""}${s.bookings.length ? `, ${s.bookings.length} booked` : ""}${s.demos?.length ? `, ${s.demos.length} tried the demo` : ""} — ${plan.category?.label || plan.mode} · ${plan.city.label}`, html }) });
+    body: JSON.stringify({ from: env.LEAD_FROM || "Mesa Intelligence <hello@mesaintelligence.ai>", to: [env.LEAD_TO], subject: `Outbound ${plan.day}: ${sent.length} emailed${s.texts?.length ? `, ${s.texts.length} site${s.texts.length === 1 ? "" : "s"} to text` : ""}${s.calls?.length ? `, ${s.calls.length} to call` : ""}${s.bookings.length ? `, ${s.bookings.length} booked` : ""}${s.demos?.length ? `, ${s.demos.length} tried the demo` : ""} — ${plan.category?.label || plan.mode} · ${plan.city.label}`, html }) });
   return res.ok;
 }

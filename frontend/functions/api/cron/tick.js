@@ -10,6 +10,7 @@ import { runTrialCheckins } from "../../_lib/trial.js";
 import { retryVoiceProvisioning } from "../../_lib/voice_retry.js";
 import { runDaily, planFor, sendDigestOnce } from "../../_lib/outbound.js";
 import { localDate } from "../../_lib/time.js";
+import { buildPreviews } from "../../_lib/preview.js";
 
 export async function onRequest({ request, env, waitUntil }) {
   if (!env.CRON_TOKEN) return json({ detail: "CRON_TOKEN not set" }, 503);
@@ -36,9 +37,17 @@ export async function onRequest({ request, env, waitUntil }) {
     outbound = await bg(runDaily(env, { timeBudgetMs: Number(env.OUTBOUND_TICK_BUDGET_MS || 18000), subrequestLimit: Number(env.OUTBOUND_TICK_SUBREQUEST_LIMIT || env.OUTBOUND_SUBREQUEST_LIMIT || 38) })
       .then((r) => ({ emailed: r.run.emailed, skipped: r.run.skipped, found: r.run.found, notes: r.run.notes || null, errors: r.run.errors.length })));
   }
+  // Website previews: build the day's batch (PREVIEW_DAILY, 10) on the 6–9 AM weekday ticks, so the text list is
+  // ready before Bobby's day starts and lands in the 4 PM digest. Each tick only builds what's still missing.
+  let previews = null;
+  const wd = localDate(new Date(), "America/Denver").weekday;
+  if (env.PREVIEWS_ENABLED !== "0" && hour >= 6 && hour <= 9 && !["sat", "sun"].includes(wd)) {
+    previews = await bg(buildPreviews(env, { timeBudgetMs: Number(env.PREVIEW_TICK_BUDGET_MS || 20000) })
+      .then((r) => ({ built: r.built.length, skipped: r.skipped.length, pool: r.pool })));
+  }
   // Daily outbound digest + call sheet at 4 PM on weekdays, after the top-ups (sent once per day).
   let digest = null;
   const digestHour = Number(env.OUTBOUND_DIGEST_HOUR || lastTopUp + 1);
   if (env.OUTBOUND_ENABLED === "1" && hour >= digestHour && hour <= digestHour + 2 && plan.mode !== "off") digest = await bg(sendDigestOnce(env));
-  return json({ ok: true, at: new Date().toISOString(), reminders, digests, plans, usage, checkins, voice_retry: voiceRetry, outbound, digest });
+  return json({ ok: true, at: new Date().toISOString(), reminders, digests, plans, usage, checkins, voice_retry: voiceRetry, outbound, previews, digest });
 }

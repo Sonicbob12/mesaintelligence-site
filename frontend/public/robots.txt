@@ -7,5 +7,6 @@ Disallow: /api/
 Disallow: /embed
 Disallow: /hear
 Disallow: /manage
+Disallow: /p/
 
 Sitemap: https://mesaintelligence.ai/sitemap.xml
