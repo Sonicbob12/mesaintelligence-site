@@ -180,7 +180,7 @@ export async function buildPreviews(env, { max, timeBudgetMs = 20000, force = fa
   const out = { built: [], skipped: [], pool: 0, want };
   if (want <= 0 && !force) return out;
   const trades = TRADE_KEYS.map((k) => `'${k}'`).join(",");
-  const { results } = await env.DB.prepare(`SELECT o.id, o.place_id, o.business, o.category, o.city, o.phone, o.reviews, o.rating FROM outreach o
+  const { results } = await env.DB.prepare(`SELECT o.id, o.place_id, o.business, o.category, o.city, o.phone FROM outreach o
     WHERE o.status = 'skipped' AND o.skip_reason LIKE 'no website%' AND o.phone IS NOT NULL AND o.phone != ''
       AND o.category IN (${trades}) AND o.place_id NOT IN (SELECT place_id FROM previews)
     ORDER BY CASE WHEN o.city IN ('las-cruces','el-paso') THEN 0 ELSE 1 END, o.created_at DESC LIMIT ?1`).bind(Math.max(want * 3, 10)).all();
