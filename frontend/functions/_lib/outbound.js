@@ -557,7 +557,7 @@ function textListHtml(list, esc) {
       <td style="padding:8px 0 4px;white-space:nowrap">${r.texts.sms_first ? `<a href="${esc(r.texts.sms_first)}">Text 1 ›</a><br>` : ""}<a href="${esc(r.url)}?admin=1">See site ›</a></td></tr>
     <tr><td colspan="3" style="padding:0 0 10px;color:#444;font-size:12px"><i>${esc(r.texts.first)}</i></td></tr>`;
   return `<h3 style="margin-top:22px">💬 Text list (${list.length}): websites built for businesses with none</h3>
-    <p style="font-size:12px;color:#555;margin:0 0 8px">Text these yourself from your own phone (on your phone, "Text 1" opens Messages with the text filled in). Send the link only after they answer. The follow-up text with the link is in /admin → Website previews. Mark each one texted there. Anyone who says stop: mark them opted out and don't text again.</p>
+    <p style="font-size:12px;color:#555;margin:0 0 8px">Text these yourself from your own phone (on your phone, "Text 1" opens Messages with the text filled in). Send the link only after they say yes; Texts 2–4 are in /admin → Website previews. Mark each one there. No price until they ask. Anyone who says stop: mark them opted out and don't text again.</p>
     <table style="border-collapse:collapse;font-size:13px;width:100%">${list.map(row).join("")}</table>`;
 }
 

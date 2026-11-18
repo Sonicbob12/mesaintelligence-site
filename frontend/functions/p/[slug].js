@@ -1,6 +1,6 @@
 // GET /p/:slug — a website preview built for a business with no website (see _lib/preview.js).
 // Hours, rating and phone are fetched live from Google Places (never stored). ?admin=1 skips the view alert.
-import { loadPreview, renderPreview, recordView, isHuman, rateOk } from "../_lib/preview.js";
+import { loadPreview, renderPreview, recordView, isHuman, rateOk, isExpired } from "../_lib/preview.js";
 import { placeDetails } from "../_lib/places.js";
 import { clientIp } from "../_lib/http.js";
 
@@ -10,6 +10,8 @@ const gone = `<!doctype html><meta name="viewport" content="width=device-width,i
 export async function onRequestGet({ request, env, params, waitUntil }) {
   const row = await loadPreview(env, String(params.slug || "").toLowerCase()).catch(() => null);
   if (!row || ["optout", "declined"].includes(row.status)) return html(gone, 404);
+  // The preview really comes down after PREVIEW_DAYS (7). Bobby can still open it from /admin with ?admin=1.
+  if (isExpired(env, row) && new URL(request.url).searchParams.get("admin") !== "1") return html(gone.replace("It may have been taken down.", "This preview has come down. Want it back?"), 410);
   const human = isHuman(request);
   const admin = new URL(request.url).searchParams.get("admin") === "1";
   // Live listing details cost a Places call; bots and over-limit IPs get the page from stored copy only.

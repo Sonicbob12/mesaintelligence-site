@@ -48,10 +48,10 @@ export default function AdminPreviews({ call }) {
       </div>
       {d && (
         <div className="text-sm text-[#9E9AA3]">
-          To text <span className="text-[#F5F3EF]">{n("ready")}</span> · texted {n("texted")} · replied {n("replied")} · link sent {n("link_sent")} · signed up <span className="text-[#8EA89D]">{n("claimed")}</span> · no {n("declined") + n("optout")} · site views {views} · "make it mine" clicks {claims}
+          To text <span className="text-[#F5F3EF]">{n("ready")}</span> · texted {n("texted")} · replied {n("replied")} · link sent {n("link_sent")} · signed up <span className="text-[#8EA89D]">{n("claimed")}</span> · no {n("declined") + n("optout")} · site views {views} · payment link opens {claims}
         </div>
       )}
-      <p className="text-xs text-[#9E9AA3] max-w-3xl">Text from <b>your own phone</b>, one at a time. Don't use the Mesa Twilio number: it's registered for appointment texts only. <b>Text 1</b> asks if they want to see it. Send <b>Text 2</b> with the link only after they answer. If anyone says stop or not interested, mark them and never text again. Line type "landline" can't receive texts, so call those instead.</p>
+      <p className="text-xs text-[#9E9AA3] max-w-3xl">Text from <b>your own phone</b>, one at a time. Don't use the Mesa Twilio number: it's registered for appointment texts only. <b>Text 1</b> asks if you can send it. <b>Text 2</b> is only the link; mark "link sent" when you send it, because that starts the 7-day clock shown on their page. Then wait. Don't bring up price until they ask what's next (<b>Text 3</b>). <b>Text 4</b> is the payment link ($249/mo, no setup fee, no contract). If anyone says stop or not interested, mark them and never text again.</p>
       <div className="flex flex-wrap gap-3 items-center">
         <button className={btn} disabled={busy} onClick={build}>{busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Build today's batch now</button>
         {FILTERS.map(([k, l]) => <button key={k} className={ghost} style={filter === k ? { borderColor: "#E5A93C", color: "#E5A93C" } : null} onClick={() => setFilter(k)}>{l}</button>)}
@@ -70,10 +70,11 @@ export default function AdminPreviews({ call }) {
               <span className="text-xs" style={{ color: p.line_type === "mobile" ? "#8EA89D" : "#9E9AA3" }}>{LINE[p.line_type] || "line type ?"}</span>
               <span className="font-mono text-[10px] uppercase tracking-[0.15em] px-2 py-0.5 border" style={{ color: COLOR[p.status], borderColor: COLOR[p.status] }}>{LABEL[p.status] || p.status}</span>
               {p.views > 0 && <span className="text-xs text-[#8EA89D]">👀 {p.views} view{p.views === 1 ? "" : "s"}, last {fmt(p.last_view_at)}</span>}
-              {p.claim_clicks > 0 && <span className="text-xs text-[#D96B43]">🔥 clicked "make it mine"</span>}
+              {p.claim_clicks > 0 && <span className="text-xs text-[#D96B43]">🔥 opened the payment link</span>}
+              {p.expires_at && p.status !== "claimed" && <span className="text-xs" style={{ color: p.expired ? "#D96B43" : "#9E9AA3" }}>{p.expired ? "preview came down" : "comes down"} {fmt(p.expires_at)}</span>}
             </div>
             <div className="grid md:grid-cols-2 gap-3">
-              {[["Text 1: ask", p.texts.first, p.texts.sms_first, "1"], ["Text 2: link, after they answer", p.texts.followup, p.texts.sms_followup, "2"]].map(([label, text, sms, k]) => (
+              {[["Text 1: ask", p.texts.first, p.texts.sms_first, "1"], ["Text 2: the link, after they say yes", p.texts.followup, p.texts.sms_followup, "2"], ["Text 3: only when they ask what's next or the price", p.texts.offer, p.texts.sms_offer, "3"], ["Text 4: payment link, after they say go", p.texts.start, p.texts.sms_start, "4"]].map(([label, text, sms, k]) => (
                 <div key={k} className="bg-[#0B0C0E] border border-white/8 p-3 space-y-2">
                   <div className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#9E9AA3]">{label}</div>
                   <div className="text-sm text-[#D8D4CE] whitespace-pre-wrap">{text}</div>

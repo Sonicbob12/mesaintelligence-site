@@ -9,10 +9,14 @@
 //
 // Storage: our own table `previews` (self-applying). Per Google's Places terms we store the place_id plus our own
 // generated copy; hours, rating and phone are fetched live from Places when the page renders.
+// Script (11/18, modeled on the "free website" playbook): Text 1 asks permission, Text 2 is only the link + the
+// real 7-day deadline, Text 3 (price) goes only when they ask what's next, Text 4 is the payment link (/p/<slug>/go).
+// The page itself never shows a price. A preview comes down PREVIEW_DAYS (7) after the link was sent
+// (link_sent_at, else the first real view); claimed previews stay up.
 // Signals: first view of a page (bots and link-preview fetchers excluded, ?admin=1 excluded) and a click on
-// "Make it mine" email Bobby (LEAD_TO). The claim button goes to /plan tagged utm_source=preview.
+// the payment-link page email Bobby (LEAD_TO).
 //
-// Env: PREVIEW_DAILY (10), PREVIEWS_ENABLED ("0" stops the daily build), PREVIEW_SKIP_LANDLINES ("0" keeps them).
+// Env: PREVIEW_DAYS (7), PREVIEW_REPLY_PHONE (number owners text back), PREVIEW_DAILY (10), PREVIEWS_ENABLED ("0" stops the daily build), PREVIEW_SKIP_LANDLINES ("0" keeps them).
 
 import { placeDetails } from "./places.js";
 import { runModelCollect } from "./anthropic.js";
@@ -36,6 +40,9 @@ export async function ensurePreviewSchema(env) {
     skip_reason TEXT, copy_json TEXT, views INTEGER NOT NULL DEFAULT 0, last_view_at INTEGER, claim_clicks INTEGER NOT NULL DEFAULT 0,
     texted_at INTEGER, replied_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`).run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS previews_status ON previews (status, created_at)").run();
+  for (const col of ["link_sent_at INTEGER", "first_view_at INTEGER"]) {
+    try { await env.DB.prepare(`ALTER TABLE previews ADD COLUMN ${col}`).run(); } catch (e) { if (!/duplicate column/i.test(String(e?.message || e))) throw e; }
+  }
   ready = true;
 }
 
@@ -111,16 +118,34 @@ export const previewUrl = (env, slug) => `${site(env)}/p/${slug}`;
 function marketLabel(key) { return MARKETS[key]?.label || String(key || "").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
 const cleanName = (n) => String(n || "").replace(/\s+/g, " ").trim();
 
-// The two texts Bobby sends by hand. First one asks; the link goes out only after they answer.
+// How long a preview stays up once the owner has the link.
+export const previewDays = (env) => Number(env.PREVIEW_DAYS || 7);
+export function expiresAt(env, row) {
+  const base = row.link_sent_at || row.first_view_at;
+  return base ? base + previewDays(env) * 86400 : null;
+}
+export const isExpired = (env, row) => row.status !== "claimed" && expiresAt(env, row) != null && expiresAt(env, row) < now();
+const fmtDay = (sec) => new Date(sec * 1000).toLocaleDateString("en-US", { timeZone: TZ, weekday: "long", month: "long", day: "numeric" });
+export function replyPhone(env) {
+  const to = e164(env.PREVIEW_REPLY_PHONE) || "+15752541185";
+  return { e164: to, label: `(${to.slice(2, 5)}) ${to.slice(5, 8)}-${to.slice(8)}` };
+}
+
+const PLURAL = { hvac: "heating and air companies", plumbing: "plumbers", electrical: "electricians", roofing: "roofers", landscaping: "landscapers", contractor: "contractors" };
+const spoken = (n) => cleanName(n).replace(/[,\s]+(l\.?l\.?c\.?|inc\.?|co\.?|corp\.?|ltd\.?)$/i, "").trim();
+function cityOf(row) { try { return JSON.parse(row.copy_json || "{}").city_label || marketLabel(row.city); } catch { return marketLabel(row.city); } }
+
+// The four texts Bobby sends by hand, in order. Only Text 1 goes out cold. No price until they ask (Text 3).
 export function textMessages(env, row) {
-  const mk = MARKETS[row.city];
-  const who = mk?.local ? `Bobby Lloyd with Mesa Intelligence, ${mk.local}` : "Bobby Lloyd with Mesa Intelligence in Las Cruces, NM";
-  const biz = cleanName(row.business);
-  const first = `Hi, is this the owner of ${biz}? This is ${who}. I noticed ${biz} doesn't have a website on its Google listing, so I made one for you. Want me to send you the link? (If you're not interested, reply STOP and I won't text again.)`;
-  const trial = env.PLAN_TRIAL_DAYS ?? 14, price = env.PLAN_PRICE_USD || 249;
-  const followup = `Here it is: ${previewUrl(env, row.slug)}\n\nI built it from your Google listing, so it has your number, hours and services. Tell me anything you want changed and I'll update it. If you want it live on your own domain, it comes with our Local Growth Plan (the website plus an AI line that answers your calls when you can't). It's free for ${trial} days, then $${price}/mo. Happy to walk you through it.`;
+  const biz = spoken(row.business);
+  const price = env.PLAN_PRICE_USD || 249;
+  const first = `Hi, is this ${biz}? I was looking through ${PLURAL[row.category] || "contractors"} in ${cityOf(row)} on Google and couldn't find a website for you. This is a little out of nowhere, but I went ahead and built you one. OK if I send you the link? – Bobby`;
+  const followup = `Here it is: ${previewUrl(env, row.slug)}\n\nIt's a preview, so it stays up for ${previewDays(env)} days. Take a look when you get a minute and tell me what you think.`;
+  const offer = `Glad you like it. The website itself is free. If you want to keep it, I'll make any changes you want and put it on your own web address. What you'd pay for is the system behind it: an AI line that answers the calls you miss and books the job, plus automatic Google review requests. It's $${price} a month, no contract, cancel anytime. Want me to send the link to get started?`;
+  const start = `Here's the link to get started: ${previewUrl(env, row.slug)}/go\n\nOnce that's done, send me any changes you want and I'll get the site onto your own web address.`;
   const to = e164(row.phone);
-  return { first, followup, sms_first: to ? `sms:${to}?&body=${encodeURIComponent(first)}` : null, sms_followup: to ? `sms:${to}?&body=${encodeURIComponent(followup)}` : null };
+  const sms = (body) => (to ? `sms:${to}?&body=${encodeURIComponent(body)}` : null);
+  return { first, followup, offer, start, sms_first: sms(first), sms_followup: sms(followup), sms_offer: sms(offer), sms_start: sms(start) };
 }
 
 // ---------- copy ----------
@@ -225,7 +250,7 @@ export async function listPreviews(env, { days = 14, status } = {}) {
     ? env.DB.prepare("SELECT * FROM previews WHERE status = ?1 AND created_at >= ?2 ORDER BY created_at DESC LIMIT 200").bind(status, since)
     : env.DB.prepare("SELECT * FROM previews WHERE status != 'skipped' AND (created_at >= ?1 OR updated_at >= ?1) ORDER BY created_at DESC LIMIT 200").bind(since);
   const rows = (await q.all()).results || [];
-  return rows.map((r) => ({ ...r, copy_json: undefined, url: previewUrl(env, r.slug), market: marketLabel(r.city), trade: CATEGORIES[r.category]?.label || r.category, texts: textMessages(env, r) }));
+  return rows.map((r) => ({ ...r, copy_json: undefined, url: previewUrl(env, r.slug), expires_at: expiresAt(env, r), expired: isExpired(env, r), market: marketLabel(r.city), trade: CATEGORIES[r.category]?.label || r.category, texts: textMessages(env, r) }));
 }
 export async function previewTotals(env) {
   if (!hasDB(env)) return {};
@@ -233,7 +258,7 @@ export async function previewTotals(env) {
   const { results } = await env.DB.prepare("SELECT status, COUNT(*) AS n, SUM(views) AS v, SUM(claim_clicks) AS c FROM previews GROUP BY status").all();
   return Object.fromEntries((results || []).map((r) => [r.status, { n: r.n, views: r.v || 0, claims: r.c || 0 }]));
 }
-const STAMP = { texted: "texted_at", replied: "replied_at" };
+const STAMP = { texted: "texted_at", replied: "replied_at", link_sent: "link_sent_at" };
 export async function setPreviewStatus(env, idv, status) {
   await ensurePreviewSchema(env);
   const ok = ["ready", "texted", "replied", "link_sent", "claimed", "declined", "optout"];
@@ -257,22 +282,26 @@ async function alert(env, subject, rows) {
 export async function recordView(env, row) {
   const t = now();
   const fresh = !row.last_view_at || row.last_view_at < t - 6 * 3600;
-  await env.DB.prepare("UPDATE previews SET views = views + 1, last_view_at = ?2, updated_at = ?2 WHERE id = ?1").bind(row.id, t).run();
+  await env.DB.prepare("UPDATE previews SET views = views + 1, last_view_at = ?2, first_view_at = COALESCE(first_view_at, ?2), updated_at = ?2 WHERE id = ?1").bind(row.id, t).run();
   if (!fresh) return;
-  const tx = textMessages(env, row);
   await alert(env, `👀 ${row.business} opened the website you made them`, [
     ["Business", esc(row.business)], ["Where", esc(marketLabel(row.city))], ["Phone", `<a href="tel:${esc(e164(row.phone) || row.phone)}">${esc(row.phone)}</a>`],
     ["Views", String((row.views || 0) + 1)], ["Status", esc(row.status)], ["Site", `<a href="${esc(previewUrl(env, row.slug))}?admin=1">${esc(previewUrl(env, row.slug))}</a>`],
-    ["Next", tx.sms_followup ? `They're looking right now. Good moment to call, or <a href="sms:${esc(e164(row.phone))}">text them</a>.` : "Good moment to call."],
+    ["Next", `They're looking right now. Wait for their reply. If they ask what's next, send Text 3 from /admin.`],
   ]);
 }
 export async function recordClaim(env, row) {
   const t = now();
   await env.DB.prepare("UPDATE previews SET claim_clicks = claim_clicks + 1, updated_at = ?2 WHERE id = ?1").bind(row.id, t).run();
-  await alert(env, `🔥 ${row.business} clicked "Make it mine" on their website`, [
+  await alert(env, `🔥 ${row.business} opened the payment link for their website`, [
     ["Business", esc(row.business)], ["Phone", `<a href="tel:${esc(e164(row.phone) || row.phone)}">${esc(row.phone)}</a>`], ["Where", esc(marketLabel(row.city))],
-    ["Site", `<a href="${esc(previewUrl(env, row.slug))}?admin=1">${esc(previewUrl(env, row.slug))}</a>`], ["Next", "They went to the plan page. If no NEW PLAN alert follows in an hour, call them."],
+    ["Site", `<a href="${esc(previewUrl(env, row.slug))}?admin=1">${esc(previewUrl(env, row.slug))}</a>`], ["Next", "They're on the signup page. If no NEW PLAN alert follows in an hour, call them."],
   ]);
+}
+export async function markClaimed(env, slug) {
+  if (!hasDB(env) || !slug) return;
+  await ensurePreviewSchema(env);
+  await env.DB.prepare("UPDATE previews SET status = 'claimed', updated_at = ?2 WHERE slug = ?1").bind(slug, now()).run();
 }
 export async function loadPreview(env, slug) {
   if (!hasDB(env) || !/^[a-z0-9-]{3,70}$/.test(slug || "")) return null;
@@ -297,9 +326,11 @@ export function renderPreview(env, row, live) {
   const city = copy.city_label || live?.city || marketLabel(row.city);
   const hours = live?.hours?.length ? live.hours : [];
   const rating = live?.rating && live?.reviewCount ? `<a class="rating" href="${esc(live.mapsUri || "#")}" target="_blank" rel="noopener"><span class="stars">★</span> ${Number(live.rating).toFixed(1)} on Google · ${live.reviewCount} review${live.reviewCount === 1 ? "" : "s"}</a>` : "";
-  const claimHref = `/p/${esc(row.slug)}/go`;
   const year = new Date().getFullYear();
-  const trial = env.PLAN_TRIAL_DAYS ?? 14, price = env.PLAN_PRICE_USD || 249;
+  const exp = expiresAt(env, row);
+  const until = row.status === "claimed" ? "" : exp ? `It comes down on ${fmtDay(exp)}.` : `It stays up for ${previewDays(env)} days.`;
+  const bob = replyPhone(env);
+  const keepSms = `sms:${bob.e164}?&body=${encodeURIComponent(`Hi Bobby, I'd like to keep the website for ${name}.`)}`;
   const faq = [
     [`What areas do you serve?`, `${name} works in ${city} and the surrounding area. Call and we'll let you know if we can get to you.`],
     [`How do I get a quote?`, `Call ${phone ? `<a href="tel:${esc(tel)}">${esc(phone)}</a>` : "us"} and tell us about the job. We'll ask a few questions and get you a quote or a time to come take a look.`],
@@ -336,7 +367,7 @@ footer{padding:28px 0;color:#777;font-size:13px;text-align:center}
 .claim{background:#0B0C0E;color:#e9e6e1;padding:56px 0}.claim h2{color:#F5F3EF}.claim .grid .card{background:#14161A;border-color:#2a2d33}.claim .card h3{color:#F5F3EF}.claim .card p{color:#9E9AA3}
 .claim .btn{background:#D96B43;color:#0B0C0E}.claim .btn.ghost{background:transparent;color:#E5A93C;border-color:#E5A93C}.claim small{color:#9E9AA3}
 </style></head><body>
-<div class="pbar"><div class="wrap"><span><b>Preview</b> made for ${esc(name)} by Mesa Intelligence. It isn't live yet.</span><a href="#claim">Make it mine</a></div></div>
+<div class="pbar"><div class="wrap"><span><b>Preview</b> made for ${esc(name)}. ${esc(until)}</span><a href="#claim">Keep this site</a></div></div>
 <header><div class="wrap"><a class="brand" href="#top"><span class="ic">${icon(t.icon, 30)}</span>${esc(name)}</a>${phone ? `<a class="btn" href="tel:${esc(tel)}">📞 <span class="hnum">${esc(phone)}</span><span class="hcall">Call</span></a>` : ""}</div></header>
 <main id="top">
 <div class="hero"><span class="ic">${icon(t.icon, 320)}</span><div class="wrap">
@@ -354,16 +385,42 @@ ${rating}
 </main>
 <footer>© ${year} ${esc(name)} · ${esc(city)}${live?.mapsUri ? ` · <a href="${esc(live.mapsUri)}" target="_blank" rel="noopener">Find us on Google</a>` : ""} · Ratings and hours from Google</footer>
 <div class="claim" id="claim"><div class="wrap">
-<p style="font-family:monospace;letter-spacing:.2em;text-transform:uppercase;font-size:11px;color:#E5A93C;margin:0 0 10px">From Bobby at Mesa Intelligence</p>
-<h2>Want this website live?</h2>
-<p style="color:#9E9AA3;max-width:640px">I built this preview from your Google listing. I can change anything on it: your services, photos, colors, wording. Then I'll put it live on your own web address. It comes with the Local Growth Plan:</p>
-<div class="grid" style="margin:22px 0 26px">
-<div class="card"><h3>Your website</h3><p>This site on your own domain, hosted and kept up to date. Ask for changes any time.</p></div>
-<div class="card"><h3>AI phone line</h3><p>Answers the calls you can't get to, books the job and texts you a summary of every call.</p></div>
-<div class="card"><h3>Google listing help</h3><p>Review requests and a monthly check of how you show up in local search.</p></div>
-</div>
-<div class="cta"><a class="btn" href="${claimHref}">Start my ${trial}-day free trial</a><a class="btn ghost" href="sms:+15752541185">Text Bobby ${BOBBY_PHONE}</a></div>
-<p><small>Free for ${trial} days, then $${price}/month. Cancel any time. Not interested? No problem. This preview will be taken down.</small></p>
+<p style="font-family:monospace;letter-spacing:.2em;text-transform:uppercase;font-size:11px;color:#E5A93C;margin:0 0 10px">From Bobby</p>
+<h2>Like it? Let's make it yours.</h2>
+<p style="color:#9E9AA3;max-width:640px">I built this from your Google listing, at no charge. If you want to keep it live, text me and I'll walk you through the next steps. I can change anything on it: services, photos, colors, wording.</p>
+<div class="cta" style="margin-top:22px"><a class="btn" href="${esc(keepSms)}">Text Bobby: I want to keep it</a><a class="btn ghost" href="tel:${bob.e164}">Call ${bob.label}</a></div>
+<p><small>${esc(until)} Not interested? No problem, you don't need to do anything.</small></p>
 </div></div>
 </body></html>`;
+}
+
+// GET /p/:slug/go — the payment link Bobby texts after they say yes (Text 4). Price lives here, not on the preview.
+export function renderStart(env, row, { error } = {}) {
+  const name = cleanName(row.business);
+  const price = env.PLAN_PRICE_USD || 249;
+  const A = (TRADES[row.category] || TRADES.contractor).accent;
+  const bob = replyPhone(env);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keep the website for ${esc(name)}</title><meta name="robots" content="noindex,nofollow">
+<style>*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#f6f7f8;color:#1a1d21;line-height:1.55}
+.box{max-width:520px;margin:0 auto;padding:28px 20px 48px}.card{background:#fff;border:1px solid #e6e8eb;border-radius:12px;padding:24px}
+h1{font-size:26px;line-height:1.15;margin:0 0 8px}ul{padding-left:20px;margin:14px 0}li{margin:8px 0}
+.price{font-size:30px;font-weight:800;margin:18px 0 2px}.price small{font-size:15px;font-weight:500;color:#555}
+label{display:block;font-weight:700;margin:18px 0 6px}input{width:100%;font-size:17px;padding:13px;border:1px solid #c9ced6;border-radius:8px}
+button{width:100%;margin-top:14px;font-size:17px;font-weight:700;padding:14px;border:0;border-radius:8px;background:${A};color:#fff;cursor:pointer}
+.muted{color:#666;font-size:14px}.err{color:#b3261e;margin-top:12px}a{color:${A}}</style></head><body><div class="box">
+<p class="muted"><a href="/p/${esc(row.slug)}">‹ Back to the website</a></p>
+<div class="card"><h1>Keep the website for ${esc(name)}</h1>
+<p class="muted" style="margin:0">The website itself is free. This turns on the system behind it:</p>
+<ul><li><b>Your website, live on your own web address</b>, with any changes you want.</li>
+<li><b>An AI phone line</b> that answers the calls you miss, books the job and texts you a summary.</li>
+<li><b>Google review requests</b> sent to your customers automatically.</li></ul>
+<div class="price">$${price} <small>a month</small></div>
+<p class="muted" style="margin:0">No contract. No setup fee. Cancel anytime.</p>
+<form method="post" action="/p/${esc(row.slug)}/go"><label for="email">Your email</label>
+<input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com">
+<button type="submit">Continue to secure checkout</button></form>
+${error ? `<p class="err">${esc(error)}</p>` : ""}
+<p class="muted" style="margin-top:14px">Payment is handled by Stripe. Questions first? Text or call Bobby at <a href="sms:${bob.e164}">${bob.label}</a>.</p>
+</div></div></body></html>`;
 }

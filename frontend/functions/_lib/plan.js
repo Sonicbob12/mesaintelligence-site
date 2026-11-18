@@ -45,15 +45,16 @@ const slug = (s) => String(s || "biz").toLowerCase().replace(/&/g, " and ").repl
 // ---------- checkout ----------
 // Env (all optional): STRIPE_SETUP_PRICE_ID (one-time setup fee, added to monthly checkouts; waived on annual),
 // STRIPE_FOUNDING_PRICE_ID + FOUNDING_CODE (founding-client monthly price, unlocked by ?code=), PLAN_TRIAL_DAYS (14).
-export async function createPlanCheckout(env, { audit, email, name, interval = "month", outreachId, code, attribution, heard }) {
+export async function createPlanCheckout(env, { audit, email, name, interval = "month", outreachId, code, attribution, heard, preview }) {
   const founding = Boolean(code && env.FOUNDING_CODE && code.trim().toLowerCase() === env.FOUNDING_CODE.toLowerCase() && env.STRIPE_FOUNDING_PRICE_ID);
   const annual = interval === "year" && env.STRIPE_PLAN_ANNUAL_PRICE_ID;
   const price = founding ? env.STRIPE_FOUNDING_PRICE_ID : annual ? env.STRIPE_PLAN_ANNUAL_PRICE_ID : env.STRIPE_PLAN_PRICE_ID;
-  const business = audit?.business_name || audit?.full?.place?.name || "";
+  // `preview` = a website-preview signup (/p/<slug>/go): monthly plan price only, no trial, no setup fee.
+  const business = audit?.business_name || audit?.full?.place?.name || preview?.business || "";
   const paidPro = Boolean(audit?.stripe_payment);
-  const trialDays = Number(env.PLAN_TRIAL_DAYS ?? 14);
+  const trialDays = preview ? 0 : Number(env.PLAN_TRIAL_DAYS ?? 14);
   const line_items = [{ price, quantity: 1 }];
-  if (env.STRIPE_SETUP_PRICE_ID && !annual && !founding) line_items.push({ price: env.STRIPE_SETUP_PRICE_ID, quantity: 1 });
+  if (env.STRIPE_SETUP_PRICE_ID && !annual && !founding && !preview) line_items.push({ price: env.STRIPE_SETUP_PRICE_ID, quantity: 1 });
   // Which video/post sent them (cookie) + "how did you hear" — attribution.js. Only keys that are set.
   const attr = attributionMetadata(attribution, heard);
   const subAttr = Object.fromEntries(Object.entries(attr).filter(([k]) => ["utm_source", "utm_medium", "utm_content", "heard_about"].includes(k)));
@@ -61,10 +62,10 @@ export async function createPlanCheckout(env, { audit, email, name, interval = "
     mode: "subscription",
     line_items,
     success_url: `${site(env)}/portal?cs={CHECKOUT_SESSION_ID}&welcome=1`,
-    cancel_url: audit ? `${reportLink(env, audit.id, audit.share_key)}` : `${site(env)}/#audit`,
+    cancel_url: preview ? `${site(env)}/p/${preview.slug}/go` : audit ? `${reportLink(env, audit.id, audit.share_key)}` : `${site(env)}/#audit`,
     customer_email: email || audit?.contact_email || undefined,
     client_reference_id: audit?.id || undefined,
-    metadata: { kind: "plan", audit_id: audit?.id || "", place_id: audit?.place_id || "", business: business.slice(0, 200), outreach_id: outreachId || "", name: String(name || audit?.contact_name || "").slice(0, 120), founding: founding ? "1" : "", ...attr },
+    metadata: { kind: "plan", preview_slug: preview?.slug || "", audit_id: audit?.id || "", place_id: audit?.place_id || preview?.place_id || "", business: business.slice(0, 200), outreach_id: outreachId || "", name: String(name || audit?.contact_name || "").slice(0, 120), founding: founding ? "1" : "", ...attr },
     subscription_data: {
       metadata: { kind: "plan", audit_id: audit?.id || "", business: business.slice(0, 200), founding: founding ? "1" : "", ...subAttr },
       ...(trialDays > 0 ? { trial_period_days: trialDays, trial_settings: { end_behavior: { missing_payment_method: "cancel" } } } : {}),
@@ -75,7 +76,7 @@ export async function createPlanCheckout(env, { audit, email, name, interval = "
     automatic_tax: env.STRIPE_AUTOMATIC_TAX === "1" ? { enabled: true } : undefined,
   };
   if (paidPro && env.STRIPE_PRO_CREDIT_COUPON) { body.discounts = [{ coupon: env.STRIPE_PRO_CREDIT_COUPON }]; delete body.allow_promotion_codes; }
-  return stripe(env, "POST", "/checkout/sessions", body, `plan-${audit?.id || email}-${Date.now()}`);
+  return stripe(env, "POST", "/checkout/sessions", body, `plan-${audit?.id || preview?.slug || email}-${Date.now()}`);
 }
 
 export async function billingPortalUrl(env, customerId, returnUrl) {
@@ -127,6 +128,7 @@ export async function provisionPlan(env, session, { waitUntil } = {}) {
     .bind(plan.id, plan.tenant_id, plan.audit_id, plan.place_id, plan.business, plan.name, plan.email, plan.phone || null, plan.website, plan.stripe_customer, plan.stripe_subscription, plan.stripe_session, null, null, plan.status, plan.portal_token, 0, JSON.stringify(plan.settings), plan.next_audit_at, plan.last_audit_id, plan.last_score, now()).run();
   // Which video/post sent them — never blocks the signup.
   try { await savePlanAttribution(env, plan.id, m); } catch (e) { console.error("plan attribution", e?.message || e); }
+  if (m.preview_slug) await import("./preview.js").then((x) => x.markClaimed(env, m.preview_slug)).catch((e) => console.error("preview claimed", e?.message || e));
   if (m.outreach_id) await env.DB.prepare("UPDATE outreach SET status = 'client', updated_at = ?2 WHERE id = ?1").bind(m.outreach_id, now()).run().catch(() => {});
 
   // 3) voice line — agent + a local number, no human step. Failure never blocks the signup; the alert tells Bobby.
